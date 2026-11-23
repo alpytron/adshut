@@ -1,0 +1,9 @@
+[Unit]
+Description=AdShut learner (break markers from the viewers' mute presses)
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=%h/adshut/python
+EnvironmentFile=-%h/.config/adshut/env
+ExecStart=%h/adshut/deploy/server/learn-all.sh
+Nice=10

@@ -1,0 +1,13 @@
+[Unit]
+Description=AdShut host (camera -> fingerprints -> detector -> IR/CEC mute)
+After=network-online.target
+
+[Service]
+Environment=PYTHONPATH=%h/adshut/python
+EnvironmentFile=-%h/.config/adshut/env
+ExecStart=/usr/bin/python3 -u -m adshut.host --config %h/.config/adshut/host.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

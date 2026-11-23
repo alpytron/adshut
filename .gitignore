@@ -1,0 +1,11 @@
+/data/
+/build/
+android/build/
+android/keystore/
+# large recorded test inputs for android/test (not distributed)
+android/testdata/
+# personal deployment config (hosts, IPs, screen corners)
+deploy/local/
+.claude/
+__pycache__/
+*.pyc

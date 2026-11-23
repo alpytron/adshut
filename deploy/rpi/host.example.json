@@ -1,0 +1,23 @@
+{
+  "_comment": "AdShut host on a Raspberry Pi for a TV that reports nothing back. Installed as ~/.config/adshut/host.json; edit there. See README section 'Raspberry Pi'.",
+
+  "source": {"type": "v4l2", "device": "/dev/video0", "size": "640x360", "fps": 10, "input_format": "mjpeg"},
+  "_source_pi_camera_module": {"type": "command", "cmd": ["rpicam-vid", "-t", "0", "-n", "--codec", "mjpeg", "--width", "640", "--height", "360", "--framerate", "10", "-o", "-"]},
+
+  "tv": {
+    "type": "command",
+    "channel": "living-room-tv",
+    "toggle": ["ir-ctl", "-d", "/dev/lirc0", "--scancode", "nec:0x040d"],
+    "_discrete_instead_of_toggle": {"mute": "irsend SEND_ONCE mytv KEY_MUTE_ON", "unmute": "irsend SEND_ONCE mytv KEY_MUTE_OFF"},
+    "_cec_instead_of_ir": {"toggle": "echo 'tx 10:44:43' | cec-client -s -d 1"},
+    "_cec_on_screen_text": "echo 'tx 10:64:00:...' | cec-client -s -d 1",
+    "power": "echo 'pow 0' | cec-client -s -d 1 | grep -q 'power status: on'",
+    "keys": {"device": "/dev/input/by-path/platform-ir-receiver@12-event", "mute": 113}
+  },
+
+  "server": {"url": "http://template-server.lan:8766", "tv": "living-room-tv", "token": "from: python3 -m adshut.server --add-tv living-room-tv"},
+
+  "detector": "shadow",
+  "toasts": false,
+  "auto_calibrate": true
+}
