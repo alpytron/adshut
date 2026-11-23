@@ -19,6 +19,17 @@ A TV may only write its own data. Uploads must start at or before the current en
 data already stored is accepted and skipped), so a TV can simply retry after any failure.
 
 Tokens: server.py --add-tv ID prints a new token for TV ID (stored in DATA/tokens.json).
+
+Recording viewer: GET / (or /ui/) serves a web page that shows every TV's recorded fingerprints
+and events on a timeline (web/viewer.html, data from viewer.py). Its API lives under /v1/admin/
+and needs an admin token: server.py --add-admin NAME prints one (stored in DATA/admins.json).
+Admins see all TVs' data; TV tokens never get access to it.
+  GET /v1/admin/clients                          clients with their recording days
+  GET /v1/admin/templates                        the whole template index (also disabled ones)
+  GET /v1/admin/c/ID/overview                    events, coverage, programmes, muted spans, verdicts
+  GET /v1/admin/c/ID/strip?from=T&to=T&n=N       overview strip (see viewer.Viewer.strip)
+  GET /v1/admin/c/ID/frames?from=T&to=T          raw fingerprint records
+  GET /v1/admin/c/ID/scores?from=T&to=T&n=N      best template scores over time
 """
 import argparse
 import hashlib
@@ -32,11 +43,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from adshut import fp
+from adshut import viewer
 
 RECORD = 8 + 432
 MAX_BODY = 32 * 1024 * 1024
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+UI_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "viewer.html")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 
@@ -49,32 +62,35 @@ class Store:
 
     # ------------------------------------------------------------ tokens
 
-    def tokens(self):
+    def tokens(self, file="tokens.json"):
         try:
-            with open(os.path.join(self.data, "tokens.json")) as f:
+            with open(os.path.join(self.data, file)) as f:
                 return json.load(f)
         except (OSError, ValueError):
             return {}
 
-    def add_tv(self, tv):
+    def add_tv(self, tv, file="tokens.json"):
         if not ID_RE.match(tv):
-            raise SystemExit("TV id: lowercase letters, digits and dashes")
-        toks = self.tokens()
+            raise SystemExit("id: lowercase letters, digits and dashes")
+        toks = self.tokens(file)
         token = secrets.token_urlsafe(24)
         toks[tv] = hashlib.sha256(token.encode()).hexdigest()   # only the hash is kept
-        path = os.path.join(self.data, "tokens.json")
+        path = os.path.join(self.data, file)
         with open(path + ".tmp", "w") as f:
             json.dump(toks, f, indent=1)
         os.chmod(path + ".tmp", 0o600)
         os.replace(path + ".tmp", path)
         return token
 
-    def who(self, token):
+    def who(self, token, file="tokens.json"):
         h = hashlib.sha256(token.encode()).hexdigest()
-        for tv, th in self.tokens().items():
+        for tv, th in self.tokens(file).items():
             if secrets.compare_digest(th, h):
                 return tv
         return None
+
+    def admin(self, token):
+        return self.who(token, "admins.json")
 
     # ------------------------------------------------------------ templates
 
@@ -128,6 +144,7 @@ class Store:
 class Handler(BaseHTTPRequestHandler):
     server_version = "adshut/1"
     store = None
+    viewer = None
 
     def log_message(self, fmt, *args):
         print(time.strftime("%H:%M:%S"), self.address_string(), fmt % args, flush=True)
@@ -152,6 +169,17 @@ class Handler(BaseHTTPRequestHandler):
         return tv
 
     def do_GET(self):
+        u = urlparse(self.path)
+        if u.path in ("/", "/ui", "/ui/"):
+            if u.path != "/ui/":
+                return self.reply(302, b"", "text/plain", {"Location": "/ui/"})
+            with open(UI_PAGE, "rb") as f:
+                return self.reply(200, f.read(), "text/html; charset=utf-8",
+                                  {"Cache-Control": "no-cache", "X-Frame-Options": "DENY",
+                                   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+                                   "script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"})
+        if u.path.startswith("/v1/admin/"):
+            return self.admin_get(u)
         tv = self.auth()
         if tv is None:
             return
@@ -175,6 +203,39 @@ class Handler(BaseHTTPRequestHandler):
             if parts[2] != tv:
                 return self.reply(403, {"error": "not your TV"})
             return self.reply(200, self.store.status(tv))
+        self.reply(404, {"error": "not found"})
+
+    def admin_get(self, u):
+        h = self.headers.get("Authorization", "")
+        if not (h.startswith("Bearer ") and self.store.admin(h[7:])):
+            return self.reply(401, {"error": "admin token needed"})
+        parts = [unquote(p) for p in u.path.strip("/").split("/")][2:]
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        v = self.viewer
+        nostore = {"Cache-Control": "no-store"}
+        try:
+            if parts == ["clients"]:
+                return self.reply(200, v.clients(), headers=nostore)
+            if parts == ["templates"]:
+                return self.reply(200, v.templates(), headers=nostore)
+            if len(parts) == 3 and parts[0] == "c":
+                cid, what = parts[1], parts[2]
+                if v.sources(cid) is None:
+                    return self.reply(404, {"error": "no such client"})
+                if what == "overview":
+                    return self.reply(200, v.overview(cid), headers=nostore)
+                t0, t1 = float(q["from"]), float(q["to"])
+                if not t1 > t0:
+                    return self.reply(400, {"error": "empty range"})
+                if what == "strip":
+                    return self.reply(200, v.strip(cid, t0, t1, int(q.get("n", 1000))),
+                                      "application/octet-stream", nostore)
+                if what == "frames":
+                    return self.reply(200, v.frames(cid, t0, t1), "application/octet-stream", nostore)
+                if what == "scores":
+                    return self.reply(200, v.scores(cid, t0, t1, int(q.get("n", 1500))), headers=nostore)
+        except (KeyError, ValueError):
+            return self.reply(400, {"error": "bad parameters"})
         self.reply(404, {"error": "not found"})
 
     def do_PUT(self):
@@ -214,12 +275,18 @@ def main():
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--add-tv", metavar="ID", help="create a token for TV ID, print it and exit")
+    ap.add_argument("--add-admin", metavar="NAME",
+                    help="create a token for the recording viewer (all TVs' data), print it and exit")
     args = ap.parse_args()
     store = Store(args.data)
     if args.add_tv:
         print(store.add_tv(args.add_tv))
         return
+    if args.add_admin:
+        print(store.add_tv(args.add_admin, "admins.json"))
+        return
     Handler.store = store
+    Handler.viewer = viewer.Viewer(store.data)
     srv = ThreadingHTTPServer((args.bind, args.port), Handler)
     print("adshut server on %s:%d, data %s" % (args.bind, args.port, store.data), flush=True)
     srv.serve_forever()

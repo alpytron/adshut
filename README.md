@@ -88,6 +88,10 @@ ssh my-server 'PYTHONPATH=~/adshut/python python3 -m adshut.server --add-tv livi
                                             # prints that TV's token
 ```
 
+To look at what a TV recorded, create a viewer token
+(`python3 -m adshut.server --add-admin me`) and open `http://my-server:8766/` (see
+[docs/design.md](docs/design.md#recording-viewer-ui-pythonadshutviewerpy-pythonadshutwebviewerhtml)).
+
 The server listens on port 8766 and keeps its data in `~/.local/share/adshut` (set
 `ADSHUT_DATA` in `~/.config/adshut/env` to change it). It speaks plain HTTP: keep it on your
 home network or put it behind an HTTPS reverse proxy.

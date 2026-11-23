@@ -1,0 +1,932 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Alpar Sandor -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdShut Recordings</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0e1014; --panel: #161a20; --panel2: #1c2129; --line: #2a313b; --text: #d9dee5;
+  --dim: #8a94a3; --faint: #5b6573; --accent: #4fa3ff; --cursor: #ffd23f;
+  --det: #e5484d; --user: #f59e0b; --state: #6b7280; --ok: #30a46c; --end: #3dd68c;
+  --issue: #ffd23f; --app: #b07cd8; --live: #2f5d8a; --off: #0a0c0f;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+select, input[type=password], input[type=text] {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+#app { display: grid; height: 100vh; grid-template-columns: 300px minmax(0, 1fr) 340px;
+  grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top top" "side mon log" "tl tl tl"; }
+header { grid-area: top; display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; letter-spacing: .02em; }
+header h1 span { color: var(--dim); font-weight: 400; }
+header label { color: var(--dim); display: flex; align-items: center; gap: 6px; }
+header .grow { flex: 1; }
+#side { grid-area: side; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+#log { grid-area: log; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.ptitle { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-weight: 600; color: var(--dim);
+  text-transform: uppercase; font-size: 11px; letter-spacing: .08em; }
+.ptitle .grow { flex: 1; }
+.filters { display: flex; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; align-items: center; }
+.filters select { flex: 1; min-width: 0; }
+.filters label { color: var(--dim); font-size: 12px; display: flex; gap: 4px; align-items: center; }
+.list { overflow: auto; flex: 1; min-height: 0; }
+.day { padding: 8px 12px 4px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  position: sticky; top: 0; background: var(--panel); }
+.prog { padding: 7px 12px; border-left: 3px solid transparent; cursor: pointer; }
+.prog:hover { background: var(--panel2); }
+.prog.sel { background: var(--panel2); border-left-color: var(--accent); }
+.prog .l1 { display: flex; gap: 8px; align-items: baseline; }
+.prog .time { font-family: var(--mono); font-size: 12px; }
+.prog .ch { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prog .l2 { color: var(--dim); font-size: 12px; display: flex; gap: 10px; margin-top: 2px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+.warn { color: var(--issue); }
+#issues { max-height: 32%; border-top: 1px solid var(--line); }
+.iss { padding: 5px 12px; cursor: pointer; font-size: 12px; display: flex; gap: 8px; }
+.iss:hover { background: var(--panel2); }
+.iss .k { font-weight: 600; white-space: nowrap; }
+.iss .t { font-family: var(--mono); color: var(--dim); }
+.empty { color: var(--faint); padding: 10px 12px; font-size: 12px; }
+
+#mon { grid-area: mon; display: flex; flex-direction: column; min-height: 0; padding: 12px; gap: 10px; }
+#screenwrap { position: relative; flex: 1; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+#screen { background: #000; border-radius: 4px; box-shadow: 0 0 0 1px var(--line); max-width: 100%; max-height: 100%; aspect-ratio: 16/9; }
+.osd { position: absolute; font-family: var(--mono); font-size: 14px; padding: 3px 8px; background: rgba(0,0,0,.55);
+  border-radius: 4px; pointer-events: none; text-shadow: 0 1px 2px #000; }
+#osd-time { top: 8px; left: 8px; }
+#osd-ch { top: 8px; right: 8px; }
+#osd-badges { bottom: 8px; left: 8px; background: none; padding: 0; display: flex; gap: 6px; }
+.badge { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,.6); }
+.badge.mute-detector { background: var(--det); color: #fff; }
+.badge.mute-user { background: var(--user); color: #111; }
+.badge.mute-state { background: var(--state); color: #fff; }
+.badge.norec { background: #333; color: var(--dim); }
+.badge.app { background: var(--app); color: #111; }
+#nosig { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; color: var(--faint);
+  font-family: var(--mono); letter-spacing: .2em; pointer-events: none; }
+#transport { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#transport .grow { flex: 1; }
+#transport .tc { font-family: var(--mono); color: var(--dim); }
+#info { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 16px; color: var(--dim); font-size: 12px; }
+#info b { color: var(--text); font-weight: 500; }
+
+.lfil { display: flex; gap: 4px; padding: 0 12px 8px; flex-wrap: wrap; }
+.lfil button { padding: 2px 8px; font-size: 12px; }
+.ev { display: grid; grid-template-columns: 74px 1fr; gap: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; border-left: 3px solid transparent; }
+.ev:hover { background: var(--panel2); }
+.ev.cur { background: #24303f; border-left-color: var(--cursor); }
+.ev .t { font-family: var(--mono); color: var(--dim); }
+.ev .x { overflow: hidden; text-overflow: ellipsis; }
+.ev .x small { color: var(--faint); }
+
+#tl { grid-area: tl; border-top: 1px solid var(--line); background: var(--panel); user-select: none; }
+#tlbar { display: flex; gap: 6px; padding: 6px 12px; align-items: center; flex-wrap: wrap; }
+#tlbar .range { font-family: var(--mono); color: var(--dim); margin-left: 8px; }
+#tlbar .grow { flex: 1; }
+#tlbar .hint { color: var(--faint); font-size: 12px; }
+#tlwrap { position: relative; }
+#tlc { display: block; width: 100%; cursor: crosshair; touch-action: none; }
+#tip { position: fixed; z-index: 10; pointer-events: none; background: #0b0d10f2; border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 9px; font-size: 12px; max-width: 420px; display: none; box-shadow: 0 4px 16px #0008; }
+#tip .h { font-family: var(--mono); color: var(--dim); margin-bottom: 2px; }
+#tip div + div { margin-top: 2px; }
+
+#login { position: fixed; inset: 0; background: #000b; display: none; align-items: center; justify-content: center; z-index: 20; }
+#login form { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; width: min(420px, 92vw);
+  display: flex; flex-direction: column; gap: 10px; }
+#login h2 { margin: 0; font-size: 16px; }
+#login p { margin: 0; color: var(--dim); }
+#login code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+#login .err { color: var(--det); min-height: 1em; }
+#busy { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); }
+#busy.on { background: var(--accent); animation: pulse .8s infinite alternate; }
+@keyframes pulse { to { opacity: .3; } }
+
+@media (max-width: 1100px) {
+  #app { grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: auto minmax(320px, 1fr) auto 260px;
+    grid-template-areas: "top top" "side mon" "tl tl" "log log"; height: auto; min-height: 100vh; }
+}
+@media (max-width: 700px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 260px minmax(240px, auto) auto 260px;
+    grid-template-areas: "top" "side" "mon" "tl" "log"; }
+  #side { border-right: 0; border-bottom: 1px solid var(--line); }
+  header { padding: 8px 16px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AdShut <span>recordings</span></h1>
+    <label>Client <select id="client"></select></label>
+    <label>Day <select id="day"></select></label>
+    <span class="grow"></span>
+    <span id="busy" title="loading"></span>
+    <button id="reload" title="Reload the client's data (R)">Reload</button>
+    <button id="logout" title="Forget the admin token on this browser">Sign out</button>
+  </header>
+
+  <aside id="side">
+    <div class="ptitle">Programmes <span class="grow"></span><span id="pcount"></span></div>
+    <div class="filters">
+      <select id="chfilter" aria-label="Channel"></select>
+      <label><input type="checkbox" id="hideshort" checked> hide &lt; 1 min</label>
+    </div>
+    <div class="list" id="progs"></div>
+    <div id="issues" class="list"></div>
+  </aside>
+
+  <main id="mon">
+    <div id="screenwrap">
+      <canvas id="screen" width="960" height="540"></canvas>
+      <div id="nosig">NOT RECORDED</div>
+      <div class="osd" id="osd-time">--</div>
+      <div class="osd" id="osd-ch"></div>
+      <div class="osd" id="osd-badges"></div>
+    </div>
+    <div id="transport">
+      <button id="b-prevev" title="Previous event (J)">&#x23EE;</button>
+      <button id="b-back" title="Back 10 s (Shift+←)">&#x23EA; 10s</button>
+      <button id="b-stepb" title="Previous frame (←)">&#x25C0;|</button>
+      <button id="b-play" title="Play / pause (Space)" style="min-width:64px">&#x25B6; Play</button>
+      <button id="b-stepf" title="Next frame (→)">|&#x25B6;</button>
+      <button id="b-fwd" title="Forward 10 s (Shift+→)">10s &#x23E9;</button>
+      <button id="b-nextev" title="Next event (L)">&#x23ED;</button>
+      <select id="speed" title="Playback speed">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option>
+        <option value="4">4×</option><option value="8">8×</option><option value="16">16×</option><option value="32">32×</option>
+      </select>
+      <button id="b-previss" title="Previous issue (,)">&#x2691; prev</button>
+      <button id="b-nextiss" title="Next issue (.)">next &#x2691;</button>
+      <span class="grow"></span>
+      <label class="tc"><input type="checkbox" id="blocks"> zone grid</label>
+    </div>
+    <div id="info"></div>
+  </main>
+
+  <aside id="log">
+    <div class="ptitle">Events in view <span class="grow"></span><span id="ecount"></span></div>
+    <div class="lfil" id="lfil"></div>
+    <div class="list" id="events"></div>
+  </aside>
+
+  <section id="tl">
+    <div id="tlbar">
+      <button data-span="60">1m</button><button data-span="300">5m</button><button data-span="900">15m</button>
+      <button data-span="3600">1h</button><button data-span="14400">4h</button><button data-span="43200">12h</button>
+      <button data-span="86400">24h</button><button id="fit" title="Fit the selected programme (F)">Fit programme</button>
+      <span class="range" id="range"></span>
+      <span class="grow"></span>
+      <span class="hint">wheel: zoom · drag: pan · click: seek · double-click a span: zoom to it</span>
+    </div>
+    <div id="tlwrap"><canvas id="tlc"></canvas></div>
+  </section>
+</div>
+<div id="tip"></div>
+<div id="login">
+  <form id="loginform">
+    <h2>Admin token</h2>
+    <p>The recording viewer shows every TV's data and needs an admin token. Create one on the server with
+      <code>python3 -m adshut.server --add-admin NAME</code>.</p>
+    <input type="password" id="tok" placeholder="token" autocomplete="off" aria-label="Admin token">
+    <label><input type="checkbox" id="remember" checked> remember on this browser</label>
+    <div class="err" id="loginerr"></div>
+    <button type="submit">Open</button>
+  </form>
+</div>
+
+<script>
+"use strict";
+// ------------------------------------------------------------------ basics
+const $ = id => document.getElementById(id);
+const RATE = 5, REC = 440, ZB = 432;
+const css = getComputedStyle(document.documentElement);
+const C = n => css.getPropertyValue("--" + n).trim();
+const COL = { det: C("det"), user: C("user"), state: C("state"), ok: C("ok"), end: C("end"), issue: C("issue"),
+  app: C("app"), live: C("live"), off: C("off"), text: C("text"), dim: C("dim"), faint: C("faint"),
+  line: C("line"), cursor: C("cursor"), accent: C("accent"), panel: C("panel"), panel2: C("panel2") };
+const CH_COLORS = ["#3b6ea5", "#7a5aa6", "#2f8a7a", "#a0613a", "#8a8a2f", "#a5476d", "#4f7f3a", "#5a6aa5"];
+const ISSUE = { missed_opening: "missed opening", missed_closing: "missed closing", false_mute: "false mute",
+  wrong_unmute: "wrong unmute" };
+
+let token = null;
+try { token = localStorage.getItem("adshut.token"); } catch (e) {}
+
+const S = {
+  clients: [], client: null, ov: null, templates: {}, day: null,
+  prog: null, view: { t0: 0, t1: 1 }, cursor: 0, playing: false, speed: 1,
+  strip: null, scores: null, chunks: new Map(), evFilter: "all",
+};
+
+function pad(n, w = 2) { return String(n).padStart(w, "0"); }
+function hms(t, ms) {
+  const d = new Date(t * 1000);
+  return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + (ms ? "." + Math.floor(d.getMilliseconds() / 100) : "");
+}
+function ymd(t) { const d = new Date(t * 1000); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function dur(s) {
+  s = Math.round(s);
+  if (s < 60) return s + " s";
+  if (s < 3600) return Math.floor(s / 60) + ":" + pad(s % 60) + " min";
+  return Math.floor(s / 3600) + " h " + pad(Math.floor(s % 3600 / 60)) + " min";
+}
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
+function hashColor(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.codePointAt(0)) >>> 0; return CH_COLORS[h % CH_COLORS.length]; }
+function dayStart(t) { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; }
+
+let busyN = 0;
+function busy(d) { busyN += d; $("busy").classList.toggle("on", busyN > 0); }
+async function api(path, binary) {
+  busy(1);
+  try {
+    const r = await fetch(path, { headers: { Authorization: "Bearer " + (token || "") } });
+    if (r.status === 401) { showLogin("The token was not accepted."); throw new Error("auth"); }
+    if (!r.ok) throw new Error(path + ": " + r.status);
+    return binary ? await r.arrayBuffer() : await r.json();
+  } finally { busy(-1); }
+}
+
+// ------------------------------------------------------------------ colour
+function zonesToImage(z, off, img) {     // 9x16 Y,Cb,Cr zone means -> RGBA
+  const d = img.data;
+  for (let i = 0; i < 144; i++) {
+    const y = z[off + i * 3], cb = z[off + i * 3 + 1] - 128, cr = z[off + i * 3 + 2] - 128;
+    d[i * 4] = y + 1.402 * cr; d[i * 4 + 1] = y - 0.344136 * cb - 0.714136 * cr; d[i * 4 + 2] = y + 1.772 * cb; d[i * 4 + 3] = 255;
+  }
+}
+
+// ------------------------------------------------------------------ login
+function showLogin(msg) {
+  $("login").style.display = "flex"; $("loginerr").textContent = msg || ""; $("tok").focus();
+}
+$("loginform").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  token = $("tok").value.trim();
+  try { if ($("remember").checked) localStorage.setItem("adshut.token", token); } catch (e) {}
+  $("login").style.display = "none";
+  start();
+});
+$("logout").onclick = () => { try { localStorage.removeItem("adshut.token"); } catch (e) {} token = null; showLogin(); };
+
+// ------------------------------------------------------------------ loading
+async function start() {
+  if (!token) return showLogin();
+  try {
+    const [clients, tpls] = await Promise.all([api("/v1/admin/clients"), api("/v1/admin/templates")]);
+    S.clients = clients;
+    S.templates = Object.fromEntries(tpls.map(t => [t.name, t]));
+  } catch (e) { return; }
+  const sel = $("client");
+  sel.innerHTML = S.clients.map(c => `<option value="${esc(c.id)}">${esc(c.label)}${c.history ? " (+ history)" : ""}</option>`).join("");
+  if (!S.clients.length) { $("progs").innerHTML = '<div class="empty">No TV has uploaded recordings yet.</div>'; return; }
+  const h = readHash();
+  sel.value = S.clients.some(c => c.id === h.client) ? h.client : S.clients[0].id;
+  await loadClient(sel.value, h);
+}
+
+async function loadClient(id, h = {}) {
+  S.client = S.clients.find(c => c.id === id);
+  S.chunks.clear(); S.strip = null; S.scores = null; stop();
+  let ov;
+  try { ov = await api("/v1/admin/c/" + encodeURIComponent(id) + "/overview"); } catch (e) { return; }
+  S.ov = ov;
+  const last = S.client.last || Date.now() / 1000;
+  ov.end = Math.max(last, ...ov.events.map(e => e.t)) + 1;
+  for (const k of ["power", "apps", "channels"]) for (const s of ov[k]) if (s[1] == null) s[1] = ov.end;
+  for (const s of ov.muted) if (s.end == null) { s.end = ov.end; s.open = true; }
+  const days = [...new Set(ov.programmes.map(p => ymd(p.start)).concat(S.client.days.map(d => d.day)))].sort();
+  $("day").innerHTML = '<option value="">all days</option>' + days.map(d => `<option>${d}</option>`).join("");
+  S.day = h.day !== undefined && (h.day === "" || days.includes(h.day)) ? h.day : (days[days.length - 1] || "");
+  $("day").value = S.day;
+  const chans = [...new Set(ov.programmes.map(p => p.channel || "unknown"))].sort();
+  $("chfilter").innerHTML = '<option value="">all channels</option>' + chans.map(c => `<option>${esc(c)}</option>`).join("");
+  renderProgs();
+  if (h.t0 && h.t1) { setView(+h.t0, +h.t1); setCursor(+(h.c || h.t0)); }
+  else {
+    const ps = visibleProgs();
+    if (ps.length) selectProg(ps[ps.length - 1]);
+    else { setView(ov.end - 3600, ov.end); setCursor(ov.end - 60); }
+  }
+}
+
+$("client").onchange = e => loadClient(e.target.value);
+$("day").onchange = e => { S.day = e.target.value; renderProgs(); const ps = visibleProgs(); if (ps.length) selectProg(ps[0]); else if (S.day) { const t = new Date(S.day + "T00:00").getTime() / 1000; setView(t, t + 86400); } };
+$("chfilter").onchange = renderProgs;
+$("hideshort").onchange = renderProgs;
+$("reload").onclick = () => S.client && loadClient(S.client.id, { day: S.day, t0: S.view.t0, t1: S.view.t1, c: S.cursor });
+
+// ------------------------------------------------------------------ programme list
+function visibleProgs() {
+  const ch = $("chfilter").value, short = $("hideshort").checked;
+  return S.ov.programmes.filter(p => (!S.day || ymd(p.start) === S.day) && (!ch || (p.channel || "unknown") === ch)
+    && (!short || p.recorded >= 60));
+}
+function renderProgs() {
+  const ps = visibleProgs();
+  $("pcount").textContent = ps.length;
+  let html = "", lastDay = null;
+  for (const p of ps) {
+    const d = ymd(p.start);
+    if (d !== lastDay && !S.day) { html += `<div class="day">${d}</div>`; lastDay = d; }
+    const i = S.ov.programmes.indexOf(p);
+    html += `<div class="prog${S.prog === p ? " sel" : ""}" data-i="${i}" tabindex="0" role="button">
+      <div class="l1"><span class="time">${hms(p.start).slice(0, 5)}–${hms(p.end).slice(0, 5)}</span>
+      <span class="ch"><span class="dot" style="background:${hashColor(p.channel || "?")}"></span>${esc(p.channel || "unknown channel")}</span></div>
+      <div class="l2"><span>${dur(p.end - p.start)}</span>
+      <span title="breaks muted (detector / user)">${p.breaks ? `🔇 ${p.breaks} (${p.detector_mutes}/${p.user_mutes})` : "no breaks"}</span>
+      ${p.issues ? `<span class="warn" title="issues to look at">⚑ ${p.issues}</span>` : ""}</div></div>`;
+  }
+  $("progs").innerHTML = html || '<div class="empty">No programmes match.</div>';
+  renderIssues();
+}
+$("progs").addEventListener("click", e => { const el = e.target.closest(".prog"); if (el) selectProg(S.ov.programmes[+el.dataset.i]); });
+$("progs").addEventListener("keydown", e => { if (e.key === "Enter") { const el = e.target.closest(".prog"); if (el) selectProg(S.ov.programmes[+el.dataset.i]); } });
+
+function selectProg(p) {
+  S.prog = p;
+  document.querySelectorAll(".prog").forEach(el => el.classList.toggle("sel", S.ov.programmes[+el.dataset.i] === p));
+  fitProg();
+  setCursor(p.start);
+  renderIssues();
+}
+function fitProg() {
+  const p = S.prog; if (!p) return;
+  const m = Math.max(30, (p.end - p.start) * 0.03);
+  setView(p.start - m, p.end + m);
+}
+$("fit").onclick = fitProg;
+
+function issuesInScope() {
+  const v = S.ov.verdicts;
+  if (S.prog) return v.filter(x => x.t >= S.prog.start - 5 && x.t <= S.prog.end + 5);
+  return S.day ? v.filter(x => ymd(x.t) === S.day) : v;
+}
+function renderIssues() {
+  const v = issuesInScope();
+  $("issues").innerHTML = `<div class="ptitle">Issues ${S.prog ? "in programme" : ""}<span class="grow"></span>${v.length}</div>` +
+    (v.map(x => `<div class="iss" data-t="${x.t}" title="${esc(x.text)}"><span class="t">${hms(x.t)}</span>
+      <span class="k warn">${ISSUE[x.kind] || x.kind}</span><span style="color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.text)}</span></div>`).join("")
+     || '<div class="empty">Nothing flagged.</div>');
+}
+$("issues").addEventListener("click", e => { const el = e.target.closest(".iss"); if (el) focusTime(+el.dataset.t, 120); });
+
+// ------------------------------------------------------------------ view and cursor
+function setView(t0, t1) {
+  const span = Math.min(Math.max(t1 - t0, 10), 7 * 86400);
+  const mid = (t0 + t1) / 2;
+  S.view = { t0: mid - span / 2, t1: mid + span / 2 };
+  $("range").textContent = `${ymd(S.view.t0)} ${hms(S.view.t0)} – ${hms(S.view.t1)}  (${dur(span)})`;
+  scheduleFetch(); drawTL(); renderEvents(); writeHash();
+}
+function focusTime(t, span) { setView(t - span / 2, t + span / 2); setCursor(t); }
+function setCursor(t) {
+  S.cursor = t;
+  showFrame(); drawTL(); markEvent(); writeHash();
+}
+
+let hashTimer = null;
+function writeHash() {
+  clearTimeout(hashTimer);
+  hashTimer = setTimeout(() => {
+    if (!S.client) return;
+    const q = new URLSearchParams({ client: S.client.id, day: S.day || "", t0: S.view.t0.toFixed(1), t1: S.view.t1.toFixed(1), c: S.cursor.toFixed(1) });
+    history.replaceState(null, "", "#" + q);
+  }, 300);
+}
+function readHash() { return Object.fromEntries(new URLSearchParams(location.hash.slice(1))); }
+
+// ------------------------------------------------------------------ fetching strips, scores, frames
+let fetchTimer = null, stripSeq = 0, scoreSeq = 0;
+function scheduleFetch() { clearTimeout(fetchTimer); fetchTimer = setTimeout(fetchView, 160); }
+async function fetchView() {
+  if (!S.client) return;
+  const { t0, t1 } = S.view, w = Math.max(100, Math.round(tlW));
+  const id = encodeURIComponent(S.client.id);
+  const seq = ++stripSeq;
+  api(`/v1/admin/c/${id}/strip?from=${t0}&to=${t1}&n=${w}`, true).then(buf => {
+    if (seq !== stripSeq) return;
+    const n = new DataView(buf).getUint32(0, true);
+    S.strip = { t0, t1, n, cover: new Float32Array(buf, 4, n), luma: new Float32Array(buf, 4 + 4 * n, n),
+      spread: new Float32Array(buf, 4 + 8 * n, n), motion: new Float32Array(buf, 4 + 12 * n, n),
+      zones: new Uint8Array(buf, 4 + 16 * n, n * ZB) };
+    S.strip.canvas = buildStripCanvas(S.strip);
+    drawTL(); showFrame();
+  }).catch(() => {});
+  if (t1 - t0 <= 45 * 60) {
+    const sseq = ++scoreSeq;
+    api(`/v1/admin/c/${id}/scores?from=${t0}&to=${t1}&n=${Math.min(w, 2000)}`).then(sc => {
+      if (sseq !== scoreSeq) return; S.scores = sc; drawTL();
+    }).catch(() => {});
+  }
+}
+function buildStripCanvas(st) {
+  const c = document.createElement("canvas"); c.width = 16 * st.n; c.height = 9;
+  const g = c.getContext("2d"), img = g.createImageData(16, 9);
+  for (let i = 0; i < st.n; i++) {
+    if (st.cover[i] <= 0 && !hasZone(st.zones, i)) continue;
+    zonesToImage(st.zones, i * ZB, img); g.putImageData(img, i * 16, 0);
+  }
+  return c;
+}
+function hasZone(z, i) { for (let k = 0; k < ZB; k += 37) if (z[i * ZB + k]) return true; return false; }
+
+const CHUNK = 60;
+function chunk(k) {
+  if (S.chunks.has(k)) return S.chunks.get(k);
+  const entry = { k, ready: false, t: null, z: null };
+  S.chunks.set(k, entry);
+  if (S.chunks.size > 80) for (const key of [...S.chunks.keys()].slice(0, 20)) S.chunks.delete(key);
+  const cid = S.client.id;
+  api(`/v1/admin/c/${encodeURIComponent(cid)}/frames?from=${k * CHUNK}&to=${(k + 1) * CHUNK}`, true).then(buf => {
+    if (!S.client || S.client.id !== cid) return;
+    const n = buf.byteLength / REC, dv = new DataView(buf);
+    entry.t = new Float64Array(n); entry.z = new Uint8Array(buf);
+    for (let i = 0; i < n; i++) entry.t[i] = dv.getFloat64(i * REC, true);
+    entry.ready = true;
+    if (Math.floor(S.cursor / CHUNK) === k) showFrame();
+  }).catch(() => S.chunks.delete(k));
+  return entry;
+}
+function frameAt(t) {   // nearest recorded frame within 0.6 s: {t, z, off}
+  const k = Math.floor(t / CHUNK);
+  let best = null;
+  for (const kk of [k - 1, k, k + 1]) {
+    const c = chunk(kk);
+    if (!c.ready || !c.t.length) continue;
+    let lo = 0, hi = c.t.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (c.t[m] < t) lo = m + 1; else hi = m; }
+    for (const i of [lo - 1, lo]) if (i >= 0 && i < c.t.length && (!best || Math.abs(c.t[i] - t) < Math.abs(best.t - t)))
+      best = { t: c.t[i], z: c.z, off: i * REC + 8, chunk: c, i };
+  }
+  if (best && Math.abs(best.t - t) > 0.6) return { missing: true, near: best };
+  return best;
+}
+
+// ------------------------------------------------------------------ monitor
+const scr = $("screen"), sg = scr.getContext("2d");
+const tiny = document.createElement("canvas"); tiny.width = 16; tiny.height = 9;
+const tg = tiny.getContext("2d"), timg = tg.createImageData(16, 9);
+function stateAt(list, t) { for (const s of list) if (s[0] <= t && t < s[1]) return s; return null; }
+function mutedAt(t) { return S.ov.muted.find(s => s.start <= t && t < s.end) || null; }
+function showFrame() {
+  if (!S.ov) return;
+  const t = S.cursor, f = frameAt(t);
+  let shown = false;
+  if (f && !f.missing) { zonesToImage(f.z, f.off, timg); shown = true; }
+  else if (S.strip && t >= S.strip.t0 && t < S.strip.t1) {
+    const i = Math.floor((t - S.strip.t0) / (S.strip.t1 - S.strip.t0) * S.strip.n);
+    if (S.strip.cover[i] > 0) { zonesToImage(S.strip.zones, i * ZB, timg); shown = !(f && f.missing); }
+  }
+  sg.fillStyle = "#000"; sg.fillRect(0, 0, scr.width, scr.height);
+  if (shown) {
+    tg.putImageData(timg, 0, 0);
+    const blocks = $("blocks").checked;
+    sg.imageSmoothingEnabled = !blocks; sg.imageSmoothingQuality = "high";
+    sg.drawImage(tiny, 0, 0, scr.width, scr.height);
+    if (blocks) {
+      sg.strokeStyle = "rgba(0,0,0,.35)"; sg.lineWidth = 1; sg.beginPath();
+      for (let x = 1; x < 16; x++) { sg.moveTo(x * scr.width / 16 + .5, 0); sg.lineTo(x * scr.width / 16 + .5, scr.height); }
+      for (let y = 1; y < 9; y++) { sg.moveTo(0, y * scr.height / 9 + .5); sg.lineTo(scr.width, y * scr.height / 9 + .5); }
+      sg.stroke();
+    }
+  }
+  $("nosig").style.display = shown ? "none" : "flex";
+  const d = new Date(t * 1000);
+  $("osd-time").textContent = ymd(t) + " " + hms(t, true);
+  const ch = stateAt(S.ov.channels, t), app = stateAt(S.ov.apps, t), pw = stateAt(S.ov.power, t), mu = mutedAt(t);
+  $("osd-ch").textContent = ch ? ch[2] : "";
+  $("osd-ch").style.display = ch ? "" : "none";
+  const badges = [];
+  if (mu) badges.push(`<span class="badge mute-${mu.started_by === "detector" ? "detector" : mu.started_by === "user" ? "user" : "state"}">MUTED · ${mu.started_by}</span>`);
+  if (pw && !pw[2]) badges.push('<span class="badge norec">TV OFF</span>');
+  if (app && !isLive(app[2])) badges.push(`<span class="badge app">${esc(appName(app[2]))}</span>`);
+  if (!shown) badges.push('<span class="badge norec">no frame</span>');
+  $("osd-badges").innerHTML = badges.join("");
+  // info panel
+  let info = "";
+  if (f && !f.missing) {
+    let sy = 0, sy2 = 0;
+    for (let i = 0; i < 144; i++) { const y = f.z[f.off + i * 3]; sy += y; sy2 += y * y; }
+    const m = sy / 144, sd = Math.sqrt(Math.max(0, sy2 / 144 - m * m));
+    let mot = null;
+    if (f.i > 0 && f.chunk.t[f.i] - f.chunk.t[f.i - 1] < 1) {
+      let a = 0; for (let i = 0; i < 144; i++) a += Math.abs(f.z[f.off + i * 3] - f.z[f.off - REC + i * 3]); mot = a / 144;
+    }
+    info += `<div>frame <b>${hms(f.t, true)}</b></div><div>brightness <b>${m.toFixed(0)}</b> · spread <b>${sd.toFixed(1)}</b></div>`;
+    info += `<div>motion <b>${mot == null ? "–" : mot.toFixed(1)}</b>${sd < 6 ? ' · <span class="warn">featureless</span>' : ""}</div>`;
+  }
+  if (mu) info += `<div>muted since <b>${hms(mu.start)}</b> by <b>${mu.started_by}</b>${mu.start_template ? ` <small>(${esc(mu.start_template)})</small>` : ""}</div>
+    <div>${mu.open ? "still muted" : `unmuted <b>${hms(mu.end)}</b> by <b>${mu.ended_by}</b>`} · ${dur(mu.end - mu.start)}</div>`;
+  if (app) info += `<div>in front <b>${esc(appName(app[2]))}</b></div>`;
+  const prev = lastEventBefore(t);
+  if (prev) info += `<div>last event <b>${hms(prev.t)}</b> ${esc(evText(prev).replace(/<[^>]+>/g, ""))}</div>`;
+  $("info").innerHTML = info;
+  $("b-play").innerHTML = S.playing ? "&#x23F8; Pause" : "&#x25B6; Play";
+}
+$("blocks").onchange = showFrame;
+function isLive(app) { return !app || /tvcenter|playtv|\.tv$|livetv|^adshut\./i.test(app); }
+function appName(app) {
+  if (!app) return "?";
+  if (/tvcenter|playtv|livetv/i.test(app)) return "Live TV";
+  if (/^adshut\./.test(app)) return "AdShut";
+  if (/tv\.settings/.test(app)) return "Settings";
+  const p = app.split("."); return p[p.length - 1];
+}
+
+// ------------------------------------------------------------------ events
+const EV_GROUPS = { all: () => true, detector: e => e.type === "detector", sound: e => e.type === "mute",
+  channel: e => e.type === "channel", tv: e => ["power", "app", "capture", "calibration"].includes(e.type) };
+$("lfil").innerHTML = Object.keys(EV_GROUPS).map(k => `<button data-g="${k}" class="${k === "all" ? "on" : ""}">${k}</button>`).join("");
+$("lfil").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.evFilter = b.dataset.g;
+  $("lfil").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderEvents(); };
+function evText(e) {
+  switch (e.type) {
+    case "power": return e.awake ? "TV on" : "TV off";
+    case "app": return "in front: " + esc(appName(e.app)) + (e.first ? " <small>(state)</small>" : "") + ` <small>${esc(e.activity ? e.activity.split(".").pop() : "")}</small>`;
+    case "channel": return `channel <b>${esc(e.name)}</b> <small>#${esc(e.number || "")}</small>`;
+    case "mute": return (e.first ? "state: " : "") + (e.muted ? "<b style='color:var(--det)'>muted</b>" : "<b style='color:var(--end)'>unmuted</b>") +
+      (e.first ? "" : e.by_detector ? " by detector" : " by user");
+    case "detector":
+      if (e.action === "hit") return `hit <b style="color:${e.template_kind === "start" ? "var(--det)" : e.template_kind === "end" ? "var(--end)" : "var(--dim)"}">${esc(e.template_kind)}</b> ${(+e.score).toFixed(2)} <small>${esc(e.template)}</small>`;
+      return `detector <b>${esc(e.action)}</b> · ${esc(e.reason || "")}${e.mode && e.mode !== "active" ? " (" + esc(e.mode) + ")" : ""} <small>${esc(e.template || "")}</small>`;
+    case "capture": return e.on ? "camera on" : `camera off <small>${e.frames ?? ""} frames</small>`;
+    case "calibration": return `calibration ${esc(e.change)}${e.shift != null ? ` <small>shift ${(+e.shift).toFixed(3)}</small>` : ""}`;
+    case "capture_error": return `camera error <small>${esc(e.error)}</small>`;
+    case "tv_link": return "TV link " + (e.up ? "up" : "down");
+    case "recorder": return "recorder " + (e.started ? "started" : "stopped");
+    default: { const o = { ...e }; delete o.t; delete o.ts; delete o.type; return esc(e.type) + " <small>" + esc(JSON.stringify(o)) + "</small>"; }
+  }
+}
+let viewEvents = [];
+function renderEvents() {
+  if (!S.ov) return;
+  const f = EV_GROUPS[S.evFilter];
+  viewEvents = S.ov.events.filter(e => e.t >= S.view.t0 && e.t <= S.view.t1 && f(e));
+  const shown = viewEvents.slice(0, 600);
+  $("ecount").textContent = viewEvents.length + (viewEvents.length > shown.length ? " (first 600)" : "");
+  $("events").innerHTML = shown.map((e, i) => `<div class="ev" data-i="${i}"><span class="t">${hms(e.t, true)}</span><span class="x">${evText(e)}</span></div>`).join("")
+    || '<div class="empty">No events in view.</div>';
+  markEvent();
+}
+$("events").addEventListener("click", e => { const el = e.target.closest(".ev"); if (el) setCursor(viewEvents[+el.dataset.i].t); });
+function lastEventBefore(t) { let p = null; for (const e of S.ov.events) { if (e.t > t) break; p = e; } return p; }
+function markEvent() {
+  const els = $("events").querySelectorAll(".ev"); let cur = -1;
+  for (let i = 0; i < Math.min(viewEvents.length, els.length); i++) if (viewEvents[i].t <= S.cursor + 0.05) cur = i;
+  els.forEach((el, i) => el.classList.toggle("cur", i === cur));
+  if (cur >= 0 && S.playing) els[cur].scrollIntoView({ block: "nearest" });
+}
+
+// ------------------------------------------------------------------ timeline
+const tlc = $("tlc"), tg2 = tlc.getContext("2d");
+const LBL = 92;
+let tlW = 800;
+const TRACKS = [
+  { id: "ruler", h: 22 }, { id: "picture", label: "Picture", h: 46 }, { id: "rec", label: "Recording", h: 14 },
+  { id: "tv", label: "TV", h: 16 }, { id: "channel", label: "Channel", h: 18 }, { id: "sound", label: "Sound", h: 20 },
+  { id: "detector", label: "Detector", h: 20 }, { id: "issues", label: "Issues", h: 16 },
+  { id: "scores", label: "Scores", h: 54 }, { id: "signal", label: "Signal", h: 34 }, { id: "templates", label: "Templates", h: 14 },
+];
+let y = 0; for (const t of TRACKS) { t.y = y; y += t.h + (t.id === "ruler" ? 0 : 4); }
+const TL_H = y + 4;
+
+function resizeTL() {
+  const dpr = window.devicePixelRatio || 1, w = $("tlwrap").clientWidth;
+  tlc.width = Math.round(w * dpr); tlc.height = Math.round(TL_H * dpr); tlc.style.height = TL_H + "px";
+  tg2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const old = tlW; tlW = w - LBL;
+  if (Math.abs(old - tlW) > 40) scheduleFetch();
+  drawTL();
+}
+const X = t => LBL + (t - S.view.t0) / (S.view.t1 - S.view.t0) * tlW;
+const T = x => S.view.t0 + (x - LBL) / tlW * (S.view.t1 - S.view.t0);
+function span(g, a, b, yy, h, col) {
+  const x0 = Math.max(LBL, X(a)), x1 = Math.min(LBL + tlW, X(b));
+  if (x1 <= x0) return null;
+  g.fillStyle = col; g.fillRect(x0, yy, Math.max(1, x1 - x0), h); return [x0, x1];
+}
+function label(g, text, x0, x1, yy, col) {
+  if (x1 - x0 < 30) return;
+  g.save(); g.beginPath(); g.rect(x0 + 3, yy - 12, x1 - x0 - 6, 16); g.clip();
+  g.fillStyle = col || COL.text; g.font = "11px system-ui, sans-serif"; g.fillText(text, x0 + 4, yy); g.restore();
+}
+const TICKS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400];
+
+let rafPending = false;
+function drawTL() { if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; reallyDraw(); }); } }
+function reallyDraw() {
+  const g = tg2, W = LBL + tlW;
+  g.clearRect(0, 0, W, TL_H);
+  if (!S.ov) return;
+  const { t0, t1 } = S.view, sec = (t1 - t0) / tlW;
+  // labels and track backgrounds
+  for (const tr of TRACKS) {
+    if (tr.id === "ruler") continue;
+    g.fillStyle = COL.panel2; g.fillRect(LBL, tr.y, tlW, tr.h);
+    g.fillStyle = COL.dim; g.font = "11px system-ui, sans-serif"; g.fillText(tr.label, 10, tr.y + tr.h / 2 + 4);
+  }
+  // day boundaries / programme highlight
+  if (S.prog) { g.fillStyle = "rgba(79,163,255,.06)"; const a = Math.max(LBL, X(S.prog.start)), b = Math.min(W, X(S.prog.end)); if (b > a) g.fillRect(a, 22, b - a, TL_H - 22); }
+  // ruler
+  let step = TICKS.find(s => s / sec >= 90) || 86400;
+  const minor = TICKS.slice().reverse().find(s => s < step && s / sec >= 12) || step;
+  const tz = new Date(t0 * 1000).getTimezoneOffset() * 60;
+  g.strokeStyle = COL.line; g.fillStyle = COL.dim; g.font = "11px " + C("mono");
+  for (let t = Math.ceil((t0 - tz) / minor) * minor + tz; t <= t1; t += minor) {
+    const x = Math.round(X(t)) + .5, major = ((t - tz) % step) === 0;
+    g.beginPath(); g.moveTo(x, major ? 8 : 15); g.lineTo(x, 22); g.stroke();
+    if (major) {
+      g.fillText(step >= 86400 || ((t - tz) % 86400 === 0) ? ymd(t).slice(5) + " " + hms(t).slice(0, 5) : step < 60 ? hms(t) : hms(t).slice(0, 5), x + 3, 12);
+      g.strokeStyle = "rgba(255,255,255,.04)"; g.beginPath(); g.moveTo(x, 22); g.lineTo(x, TL_H); g.stroke(); g.strokeStyle = COL.line;
+    }
+  }
+  const tr = Object.fromEntries(TRACKS.map(t => [t.id, t]));
+  // picture: thumbnails from the strip
+  const st = S.strip, pic = tr.picture;
+  if (st) {
+    const tw = Math.round(pic.h * 16 / 9);
+    const bw = (st.t1 - st.t0) / st.n;
+    for (let x = LBL; x < W; x += tw) {
+      const tc = T(Math.min(x + tw / 2, W - 1));
+      const i = Math.floor((tc - st.t0) / bw);
+      if (i < 0 || i >= st.n || st.cover[i] <= 0 && !hasZone(st.zones, i)) continue;
+      g.imageSmoothingEnabled = true;
+      g.drawImage(st.canvas, i * 16, 0, 16, 9, x + 1, pic.y + 1, Math.min(tw - 2, W - x - 1), pic.h - 2);
+    }
+    // recording coverage + signal, per bucket mapped to the current view
+    const rec = tr.rec, sig = tr.signal;
+    let mmax = 1; for (let i = 0; i < st.n; i++) mmax = Math.max(mmax, st.motion[i]);
+    g.beginPath();
+    for (let i = 0; i < st.n; i++) {
+      const a = st.t0 + i * bw, x0 = X(a), x1 = X(a + bw);
+      if (x1 < LBL || x0 > W) continue;
+      const cv = st.cover[i];
+      if (cv > 0) { g.fillStyle = `rgba(48,164,108,${0.35 + 0.65 * cv})`; g.fillRect(Math.max(LBL, x0), rec.y, Math.max(1, x1 - Math.max(LBL, x0)), rec.h); }
+      if (cv > 0) {
+        const mh = st.motion[i] / mmax * (sig.h - 2);
+        g.fillStyle = "rgba(79,163,255,.45)"; g.fillRect(Math.max(LBL, x0), sig.y + sig.h - mh, Math.max(1, x1 - Math.max(LBL, x0)), mh);
+      }
+    }
+    g.strokeStyle = "rgba(230,230,230,.8)"; g.lineWidth = 1; g.beginPath(); let pen = false;
+    for (let i = 0; i < st.n; i++) {
+      const x = X(st.t0 + (i + .5) * bw);
+      if (st.cover[i] <= 0 || x < LBL || x > W) { pen = false; continue; }
+      const yy = sig.y + sig.h - 1 - st.luma[i] / 255 * (sig.h - 2);
+      pen ? g.lineTo(x, yy) : g.moveTo(x, yy); pen = true;
+    }
+    g.stroke();
+  }
+  // TV: power + app in front
+  const tv = tr.tv;
+  for (const [a, b, on] of S.ov.power) if (!on) span(g, a, b, tv.y, tv.h, COL.off);
+  for (const [a, b, app] of S.ov.apps) {
+    if (isLive(app)) continue;
+    const r = span(g, a, b, tv.y + 2, tv.h - 4, COL.app); if (r) label(g, appName(app), r[0], r[1], tv.y + 12, "#111");
+  }
+  // channel
+  const chT = tr.channel;
+  for (const [a, b, name] of S.ov.channels) {
+    const r = span(g, a, b, chT.y, chT.h, hashColor(name));
+    if (r) { g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(r[0], chT.y, 1, chT.h); label(g, name, r[0], r[1], chT.y + 13); }
+  }
+  // sound
+  const so = tr.sound;
+  for (const m of S.ov.muted) {
+    const col = m.started_by === "detector" ? COL.det : m.started_by === "user" ? COL.user : COL.state;
+    const r = span(g, m.start, m.end, so.y, so.h, col);
+    if (!r) continue;
+    const endc = m.ended_by === "detector" ? COL.end : m.ended_by === "user" ? COL.user : m.ended_by === "failsafe" ? "#fff" : COL.state;
+    if (X(m.end) <= W) { g.fillStyle = endc; g.fillRect(X(m.end) - 3, so.y, 3, so.h); }
+    label(g, `${m.started_by} → ${m.open ? "…" : m.ended_by} · ${dur(m.end - m.start)}`, r[0], r[1] - 3, so.y + 14, m.started_by === "user" ? "#111" : "#fff");
+  }
+  // detector markers
+  const de = tr.detector;
+  for (const e of S.ov.events) {
+    if (e.type !== "detector" || e.t < t0 || e.t > t1) continue;
+    const x = X(e.t);
+    if (e.action === "hit") {
+      g.fillStyle = e.template_kind === "start" ? COL.det : e.template_kind === "end" ? COL.end : COL.dim;
+      g.beginPath();
+      if (e.template_kind === "end") { g.moveTo(x, de.y + 2); g.lineTo(x - 5, de.y + 11); g.lineTo(x + 5, de.y + 11); }
+      else { g.moveTo(x, de.y + 11); g.lineTo(x - 5, de.y + 2); g.lineTo(x + 5, de.y + 2); }
+      g.fill();
+    } else {
+      g.fillStyle = e.action === "mute" ? COL.det : e.reason && e.reason !== "unmute marker" ? "#fff" : COL.end;
+      g.fillRect(x - 1, de.y + 12, 2, de.h - 12);
+    }
+  }
+  // issues
+  const is = tr.issues;
+  for (const v of S.ov.verdicts) {
+    if (v.t < t0 || v.t > t1) continue;
+    const x = X(v.t);
+    g.fillStyle = COL.issue; g.fillRect(x, is.y + 1, 1.5, is.h - 2);
+    g.beginPath(); g.moveTo(x + 1.5, is.y + 1); g.lineTo(x + 10, is.y + 4.5); g.lineTo(x + 1.5, is.y + 8); g.fill();
+  }
+  // scores
+  const sc = tr.scores, s = S.scores;
+  if (t1 - t0 > 45 * 60) {
+    g.fillStyle = COL.faint; g.font = "11px system-ui, sans-serif"; g.fillText("zoom in to 45 min or less to see template scores", LBL + 8, sc.y + sc.h / 2 + 4);
+  } else if (s) {
+    const yv = v => sc.y + sc.h - 1 - Math.max(0, (v - 0.4) / 0.6) * (sc.h - 2);
+    g.strokeStyle = "rgba(255,255,255,.25)"; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(LBL, yv(0.8) + .5); g.lineTo(W, yv(0.8) + .5); g.stroke(); g.setLineDash([]);
+    g.fillStyle = COL.faint; g.font = "10px " + C("mono"); g.fillText("0.8", LBL - 22, yv(0.8) + 3); g.fillText("1.0", LBL - 22, sc.y + 8);
+    for (const [k, col] of [["end", COL.end], ["start", COL.det]]) {
+      g.strokeStyle = col; g.lineWidth = 1.3; g.beginPath(); let pen = false;
+      const bw = (s.t1 - s.t0) / s.n;
+      for (let i = 0; i < s.n; i++) {
+        const v = s[k][i], x = X(s.t0 + (i + .5) * bw);
+        if (v == null || v < 0.4 || x < LBL || x > W) { pen = false; continue; }
+        pen ? g.lineTo(x, yv(v)) : g.moveTo(x, yv(v)); pen = true;
+      }
+      g.stroke(); g.lineWidth = 1;
+    }
+  }
+  // template sources
+  const tp = tr.templates;
+  for (const t of Object.values(S.templates)) {
+    if (!t.source || t.source + (t.seconds || 5) < t0 || t.source > t1) continue;
+    if (S.ov.channels.length) { const ch = stateAt(S.ov.channels, t.source); if (ch && ch[2] !== t.channel) continue; }
+    const col = t.kind === "start" ? COL.det : t.kind === "end" ? COL.end : COL.dim;
+    g.globalAlpha = t.enabled === false ? 0.3 : 1;
+    span(g, t.source, t.source + (t.seconds || 5), tp.y + 2, tp.h - 4, col);
+    g.globalAlpha = 1;
+  }
+  // cursor
+  const cx = X(S.cursor);
+  if (cx >= LBL && cx <= W) {
+    g.fillStyle = COL.cursor; g.fillRect(Math.round(cx) - 1, 0, 2, TL_H);
+    g.beginPath(); g.moveTo(cx - 6, 0); g.lineTo(cx + 6, 0); g.lineTo(cx, 8); g.fill();
+  }
+  if (hoverX != null && hoverX >= LBL) { g.fillStyle = "rgba(255,255,255,.35)"; g.fillRect(Math.round(hoverX), 22, 1, TL_H - 22); }
+  g.fillStyle = COL.panel; g.fillRect(0, 0, LBL, 22);
+}
+
+// hover tooltips
+let hoverX = null;
+function trackAt(yy) { return TRACKS.find(t => yy >= t.y && yy < t.y + t.h + 4); }
+function tipFor(tr, t, x) {
+  const near = (et, px = 6) => Math.abs(X(et) - x) <= px;
+  const out = [];
+  switch (tr && tr.id) {
+    case "picture": case "rec": case "signal": {
+      const st = S.strip; if (!st) break;
+      const i = Math.floor((t - st.t0) / (st.t1 - st.t0) * st.n);
+      if (i >= 0 && i < st.n) out.push(`recorded <b>${Math.round(st.cover[i] * 100)}%</b> · brightness ${st.luma[i].toFixed(0)} · motion ${st.motion[i].toFixed(1)}`);
+      break;
+    }
+    case "tv": { const p = stateAt(S.ov.power, t), a = stateAt(S.ov.apps, t);
+      if (p) out.push(p[2] ? "TV on" : "TV off"); if (a) out.push("in front: " + esc(appName(a[2])) + ` <small>${esc(a[2])}</small>`); break; }
+    case "channel": { const c = stateAt(S.ov.channels, t); if (c) out.push(`<b>${esc(c[2])}</b> from ${hms(c[0])}`); break; }
+    case "sound": { const m = mutedAt(t);
+      if (m) out.push(`muted ${hms(m.start)}–${m.open ? "now" : hms(m.end)} (${dur(m.end - m.start)})`,
+        `started by <b>${m.started_by}</b>${m.start_template ? " · " + esc(m.start_template) : ""}`,
+        `ended by <b>${m.open ? "–" : m.ended_by}</b>${m.end_reason ? " · " + esc(m.end_reason) : ""}${m.end_template ? " · " + esc(m.end_template) : ""}`);
+      break; }
+    case "detector": for (const e of S.ov.events) if (e.type === "detector" && near(e.t)) out.push(`${hms(e.t, true)} ${evText(e)}`); break;
+    case "issues": for (const v of S.ov.verdicts) if (near(v.t, 8)) out.push(`<b class="warn">${ISSUE[v.kind] || v.kind}</b> ${hms(v.t)}<br>${esc(v.text)}`); break;
+    case "scores": { const s = S.scores; if (!s || S.view.t1 - S.view.t0 > 45 * 60) break;
+      const i = Math.floor((t - s.t0) / (s.t1 - s.t0) * s.n);
+      if (i >= 0 && i < s.n) for (const k of ["start", "end"]) if (s[k][i] != null && s[k][i] > -1)
+        out.push(`best ${k}: <b>${s[k][i].toFixed(3)}</b> <small>${esc(s.names[s[k + "_tpl"][i]] || "")}</small>`);
+      break; }
+    case "templates": for (const tp of Object.values(S.templates))
+      if (tp.source && t >= tp.source - 2 * (S.view.t1 - S.view.t0) / tlW * 3 && t <= tp.source + (tp.seconds || 5))
+        out.push(`<b>${esc(tp.name)}</b> ${tp.enabled === false ? "(disabled)" : ""}<br><small>${esc(tp.kind)} · ${esc(tp.origin)} · threshold ${tp.threshold ?? 0.8}${tp.successes ? " · " + tp.successes + " ok" : ""}${tp.strikes ? " · " + tp.strikes + " strikes" : ""}<br>${esc(tp.note || "")}</small>`);
+      break;
+  }
+  return out;
+}
+tlc.addEventListener("pointermove", ev => {
+  const r = tlc.getBoundingClientRect(), x = ev.clientX - r.left, yy = ev.clientY - r.top;
+  if (drag) {
+    const dt = (x - drag.x) / tlW * (drag.t1 - drag.t0);
+    if (Math.abs(x - drag.x) > 3) drag.moved = true;
+    if (drag.moved) setView(drag.t0 - dt, drag.t1 - dt);
+    return;
+  }
+  hoverX = x >= LBL ? x : null; drawTL();
+  const tip = $("tip");
+  if (x < LBL) { tip.style.display = "none"; return; }
+  const t = T(x), lines = tipFor(trackAt(yy), t, x);
+  tip.innerHTML = `<div class="h">${ymd(t)} ${hms(t, true)}</div>` + lines.map(l => `<div>${l}</div>`).join("");
+  tip.style.display = "block";
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - tw - 8) + "px";
+  tip.style.top = Math.max(8, ev.clientY - th - 12) + "px";
+});
+tlc.addEventListener("pointerleave", () => { hoverX = null; $("tip").style.display = "none"; drawTL(); });
+let drag = null;
+tlc.addEventListener("pointerdown", ev => {
+  const r = tlc.getBoundingClientRect();
+  drag = { x: ev.clientX - r.left, t0: S.view.t0, t1: S.view.t1, moved: false };
+  tlc.setPointerCapture(ev.pointerId);
+});
+tlc.addEventListener("pointerup", ev => {
+  const r = tlc.getBoundingClientRect(), x = ev.clientX - r.left;
+  if (drag && !drag.moved && x >= LBL) setCursor(T(x));
+  drag = null;
+});
+tlc.addEventListener("dblclick", ev => {
+  const r = tlc.getBoundingClientRect(), x = ev.clientX - r.left, yy = ev.clientY - r.top, t = T(x), tr = trackAt(yy);
+  let s = null;
+  if (tr && tr.id === "sound") { const m = mutedAt(t); if (m) s = [m.start, m.end]; }
+  else if (tr && tr.id === "channel") { const c = stateAt(S.ov.channels, t); if (c) s = [c[0], c[1]]; }
+  else if (tr && tr.id === "tv") { const a = stateAt(S.ov.apps, t); if (a) s = [a[0], a[1]]; }
+  if (s) { const m = Math.max(10, (s[1] - s[0]) * 0.1); setView(s[0] - m, s[1] + m); }
+});
+tlc.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const r = tlc.getBoundingClientRect(), x = Math.max(LBL, ev.clientX - r.left), t = T(x);
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+    const dt = ev.deltaX / tlW * (S.view.t1 - S.view.t0); return setView(S.view.t0 + dt, S.view.t1 + dt);
+  }
+  const f = Math.exp(ev.deltaY * (ev.deltaMode ? 0.05 : 0.0015));
+  const sp = Math.min(Math.max((S.view.t1 - S.view.t0) * f, 10), 7 * 86400), a = (x - LBL) / tlW;
+  S.view = { t0: t - a * sp, t1: t - a * sp + sp }; setView(S.view.t0, S.view.t1);
+}, { passive: false });
+document.querySelectorAll("#tlbar [data-span]").forEach(b => b.onclick = () => {
+  const sp = +b.dataset.span; setView(S.cursor - sp / 2, S.cursor + sp / 2);
+});
+
+// ------------------------------------------------------------------ playback and keys
+let lastTs = null;
+function loop(ts) {
+  if (!S.playing) { lastTs = null; return; }
+  if (lastTs != null) {
+    const nt = S.cursor + (ts - lastTs) / 1000 * S.speed;
+    const k = Math.floor(nt / CHUNK); chunk(k + 1);
+    S.cursor = nt;
+    const sp = S.view.t1 - S.view.t0;
+    if (nt > S.view.t1 - sp * 0.05) setView(nt - sp * 0.1, nt + sp * 0.9);
+    showFrame(); drawTL(); markEvent();
+    if (S.ov && nt > S.ov.end) stop();
+  }
+  lastTs = ts; requestAnimationFrame(loop);
+}
+function play() { if (!S.ov) return; S.playing = true; lastTs = null; requestAnimationFrame(loop); showFrame(); }
+function stop() { S.playing = false; if (S.ov) { showFrame(); writeHash(); } }
+function toggle() { S.playing ? stop() : play(); }
+function step(n) {
+  stop();
+  const f = frameAt(S.cursor);
+  if (f && !f.missing) {
+    const c = f.chunk, i = f.i + n;
+    if (i >= 0 && i < c.t.length) return setCursor(c.t[i]);
+  }
+  setCursor(S.cursor + n / RATE);
+}
+function jumpEvent(dir, list) {
+  const ts = list.map(e => e.t).filter(t => dir > 0 ? t > S.cursor + 0.05 : t < S.cursor - 0.05);
+  if (!ts.length) return;
+  const t = dir > 0 ? Math.min(...ts) : Math.max(...ts);
+  if (t < S.view.t0 || t > S.view.t1) { const sp = S.view.t1 - S.view.t0; setView(t - sp / 2, t + sp / 2); }
+  setCursor(t);
+}
+$("b-play").onclick = toggle;
+$("b-stepb").onclick = () => step(-1); $("b-stepf").onclick = () => step(1);
+$("b-back").onclick = () => setCursor(S.cursor - 10); $("b-fwd").onclick = () => setCursor(S.cursor + 10);
+const evList = () => S.ov.events.filter(EV_GROUPS[S.evFilter]).filter(e => !e.first);
+$("b-prevev").onclick = () => jumpEvent(-1, evList()); $("b-nextev").onclick = () => jumpEvent(1, evList());
+$("b-previss").onclick = () => jumpEvent(-1, S.ov.verdicts); $("b-nextiss").onclick = () => jumpEvent(1, S.ov.verdicts);
+$("speed").onchange = e => { S.speed = +e.target.value; };
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, select, textarea") || $("login").style.display === "flex" || !S.ov) return;
+  const sp = S.view.t1 - S.view.t0;
+  switch (e.key) {
+    case " ": toggle(); break;
+    case "ArrowLeft": e.shiftKey ? setCursor(S.cursor - 10) : step(-1); break;
+    case "ArrowRight": e.shiftKey ? setCursor(S.cursor + 10) : step(1); break;
+    case "+": case "=": setView(S.cursor - sp / 4, S.cursor + sp / 4); break;
+    case "-": setView(S.cursor - sp, S.cursor + sp); break;
+    case "j": case "J": jumpEvent(-1, evList()); break;
+    case "l": case "L": jumpEvent(1, evList()); break;
+    case ",": jumpEvent(-1, S.ov.verdicts); break;
+    case ".": jumpEvent(1, S.ov.verdicts); break;
+    case "f": case "F": fitProg(); break;
+    case "r": case "R": $("reload").click(); break;
+    case "c": case "C": setView(S.cursor - sp / 2, S.cursor + sp / 2); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+
+new ResizeObserver(resizeTL).observe($("tlwrap"));
+resizeTL();
+start();
+</script>
+</body>
+</html>

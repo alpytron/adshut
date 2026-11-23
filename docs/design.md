@@ -129,6 +129,31 @@ Uploads are resumable: data already stored is skipped, so a client simply retrie
 failure. A TV may write only its own data, kept in `DATA/tvs/<id>/`. Nothing else is uploaded:
 no pictures, no audio.
 
+### Recording viewer (`/ui/`, `python/adshut/viewer.py`, `python/adshut/web/viewer.html`)
+
+A web page served by the template server for inspecting what a TV recorded. It needs an admin
+token (`python3 -m adshut.server --add-admin NAME`, kept hashed in `DATA/admins.json`), which can
+read every TV's data; TV tokens cannot. Open `http://SERVER:8766/` and paste the token.
+
+- **Client and programme selector:** a client is a TV (plus the older recordings its learner reads
+  through `--history`). A programme is a recorded stretch on one channel; gaps of up to 5 minutes
+  (menus, the guide, another app) do not split it. The list shows each programme's breaks
+  (detector/user mutes) and issues, filtered by day and channel.
+- **Monitor:** the fingerprint at the cursor drawn as a 16×9 picture (smoothed, or as the zone
+  grid), with time, channel, mute state and the app in front.
+- **Timeline** (DVR style; wheel zooms, drag pans, click seeks): thumbnails, recording coverage,
+  TV power and app in front, channel, muted spans (red = detector, orange = user; the end mark
+  shows who unmuted), detector hits and actions, issues, the best start/end template score
+  (views up to 45 minutes; computed on demand), brightness and motion, and where templates were cut.
+- **Issues** are derived from the event log: missed opening (the user muted), false mute (the user
+  unmuted within 60 s of a detector mute), missed closing (the user had to unmute, or the 8-minute
+  failsafe did), wrong unmute (the user re-muted within 30 s of a detector unmute).
+- Keys: Space play/pause, ←/→ frame, Shift+←/→ 10 s, J/L previous/next event, `,`/`.` previous/next
+  issue, +/− zoom, F fit programme.
+
+The fingerprints are what the TV uploads anyway (16×9 colour averages), so the viewer shows no
+more than the server already holds.
+
 ## TV app HTTP interface (port 8765)
 
 | URL | Returns |
