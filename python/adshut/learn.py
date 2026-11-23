@@ -43,6 +43,16 @@ already known. One that matches a
 template of the opposite kind is ambiguous: the longer of the two carries context and is kept,
 the shorter one (the shared core) is dropped; equal lengths drop both.
 
+Mined templates (optional, --mine): what airs INSIDE a muted break is break material too, even
+where nobody pressed anything. After each muted break ends, its interior (minus the edges, where
+presses lag the picture) is correlated against the history; moving material that also aired in
+another break, and passes the same checks as a mute candidate, becomes a "mined" start template
+(at most MINE_PIECE_S long, threshold MINE_THRESHOLD). Mined material only ever becomes a MUTE
+marker: airing again inside a break it does nothing, and if a break started unnoticed or the
+sound came back too early, it mutes. It never becomes an unmute marker, which mid-break material
+would make dangerous. At most MAX_MINED per channel stay enabled (most airings in breaks first),
+since every template costs the TV time on every frame.
+
 Feedback: when the user reverses a detector action within REVERSE_S, the template that caused it
 gets a strike, one that stood a success; a template with more strikes than successes is disabled.
 
@@ -83,6 +93,14 @@ MAX_TEMPLATE_S = 10.0
 TOUCH = 10              # grid frames (2 s): segments this close count as one stretch
 CONTRA_S = 60           # an airing followed this soon by the opposite press contradicts a candidate
 
+MINE_MIN_SPAN_S = 90    # muted spans shorter than this are not mined (a doubtful or very short break)
+MINE_EDGE_S = (10, 60)  # interior of a span: skip its start and its end (presses lag the picture)
+MINE_CHUNK_S = 60.0     # the interior is correlated in chunks of this length (memory)
+MINE_STEP_S = 50.0
+MINE_PIECE_S = 5.0      # mined templates: the first seconds of a recurring segment
+MINE_THRESHOLD = 0.9
+MAX_MINED = 25          # enabled mined templates per channel
+
 STATE = "learn_state.json"
 
 
@@ -122,14 +140,29 @@ def muted_spans(events):
     return merged
 
 
+def channel_at(events, t):
+    """Name of the channel on at epoch t, from channel and mute events."""
+    name = None
+    for e in events:
+        if e["t"] > t:
+            break
+        if e["type"] == "channel" and e.get("name"):
+            name = e["name"]
+        elif e["type"] == "mute" and e.get("channel"):
+            name = e["channel"]
+    return name
+
+
 def detector_actions(events):
     return [e for e in events if e["type"] == "detector" and e.get("action") in ("mute", "unmute")
             and e.get("mode", "active") == "active"]
 
 
 class Learner:
-    def __init__(self, data=fp.DATA, dry_run=False, templates_dir=None):
+    def __init__(self, data=fp.DATA, dry_run=False, templates_dir=None, mine=False):
         self.data = data
+        self.mine_enabled = mine
+        self.mined = []
         self.dry = dry_run
         self.lib = Library(data, templates_dir)
         self.state_file = os.path.join(data, STATE)
@@ -175,6 +208,8 @@ class Learner:
                 if not r["resolved"] and "window not recorded" not in r["skipped"]:
                     still.append({"t": lab["t"], "muted": lab["muted"], "channel": lab["channel"]})
         self.feedback(events, ready)
+        if self.mine_enabled:
+            self.mined = self.mine(events, ready)
         self.disabled = self.validate()
         if not self.dry:
             self.state["labels_done"] = max(self.state["labels_done"], ready)
@@ -182,6 +217,64 @@ class Learner:
             with open(self.state_file, "w") as f:
                 json.dump(self.state, f)
         return out
+
+    def mine(self, events, ready):
+        """Mined start templates from the interiors of muted breaks that ended since the last run."""
+        done = self.state.get("mined_until", 0.0)
+        events = sorted(events, key=lambda e: e["t"])
+        out = []
+        for s0, s1 in self.spans:
+            if not done < s1 <= ready or s1 - s0 < MINE_MIN_SPAN_S:
+                continue
+            a, b = s0 + MINE_EDGE_S[0], s1 - MINE_EDGE_S[1]
+            channel = channel_at(events, a)
+            tl = self.timeline(datetime.fromtimestamp(a).strftime("%Y-%m-%d"))
+            if not channel or not len(tl) or b - a < corr.MIN_SEGMENT / fp.RATE:
+                continue
+            lab = {"t": s0, "muted": True, "channel": channel, "mined": True, "span": (s0, s1)}
+            result = {"label": "%s-%s muted break %s (mining)" % (hms(s0), hms(s1), channel),
+                      "kind": "start", "added": [], "skipped": [], "resolved": True}
+            chunk, step = int(MINE_CHUNK_S * fp.RATE), int(MINE_STEP_S * fp.RATE)
+            i0, i1 = max(0, tl.index(a)), min(len(tl), tl.index(b))
+            for c0 in range(i0, max(i0 + 1, i1 - corr.MIN_SEGMENT), step):
+                c1 = min(i1, c0 + chunk)
+                if c1 - c0 < corr.MIN_SEGMENT:
+                    break
+                win = slice(c0, c1)
+                ok = tl.valid[win] & (tl.weight[win] >= corr.USABLE_WEIGHT)
+                if ok.mean() < 0.5:
+                    continue
+                found = corr.recurrences(tl.feat[win], ok, self.history(), (s0 - 10, s1 + 10))
+                for sa, sb, cnt in corr.segments(c1 - c0, found):
+                    if corr.is_static(tl.feat[c0 + sa:c0 + sb + 1]):
+                        continue
+                    airings = corr.airing_times(found, sa, sb)
+                    in_breaks = [x for x in airings if any(p0 - CONTRA_S <= x <= p1 for p0, p1 in self.spans)]
+                    if not in_breaks:
+                        result["skipped"].append("%s-%s no airing in another break" % (
+                            hms(tl.time(c0 + sa)), hms(tl.time(c0 + sb))))
+                        continue
+                    n = min(sb - sa + 1, int(MINE_PIECE_S * fp.RATE))
+                    self.consider(lab, tl, "start", c0 + sa, c0 + sa + n, result, exact=True,
+                                  recurrences=len(in_breaks), airings=airings)
+            if result["added"] or result["skipped"]:
+                out.append(result)
+        self.cap_mined()
+        if not self.dry:
+            self.state["mined_until"] = max(done, ready)
+        return out
+
+    def cap_mined(self):
+        """Keeps at most MAX_MINED enabled mined templates per channel, the most aired ones."""
+        by_channel = {}
+        for e in self.lib.entries:
+            if e.get("origin") == "mined" and e.get("enabled", True):
+                by_channel.setdefault(e["channel"], []).append(e)
+        for channel, entries in by_channel.items():
+            entries.sort(key=lambda e: (-e.get("recurrences", 0), -e["source"]))
+            for e in entries[MAX_MINED:]:
+                if not self.dry:
+                    self.disable(e["name"], "over the cap of %d mined templates" % MAX_MINED)
 
     def history(self):
         days = sorted(f[:-4] for f in os.listdir(os.path.join(self.data, "fp")) if f.endswith(".bin"))
@@ -360,8 +453,17 @@ class Learner:
                 result["skipped"].append(label + " also in the programme before (%.2f)" % prog)
                 return
         how = "exact, %d other airing(s)" % recurrences if exact else "provisional"
+        if lab.get("mined"):
+            how = "mined, %d airing(s) in other breaks" % recurrences
         if self.dry:
             result["added"].append("%s %.1f s %s (dry run)" % (label, (e - s) / fp.RATE, how))
+            return
+        if lab.get("mined"):
+            s0, s1 = lab["span"]
+            name = self.lib.add(channel, kind, tl.zones[piece], tl.time(s), origin="mined", threshold=MINE_THRESHOLD,
+                                note="mined from the muted break %s-%s (%s)" % (hms(s0), hms(s1), how),
+                                extra={"label_t": s1, "provisional": False, "recurrences": recurrences})
+            result["added"].append("%s %.1f s %s" % (name, (e - s) / fp.RATE, how))
             return
         name = self.lib.add(channel, kind, tl.zones[piece], tl.time(s), origin="learned", threshold=THRESHOLD,
                             note="learned from user %s at %s (%s)" % ("mute" if lab["muted"] else "unmute",
@@ -419,14 +521,22 @@ def main():
     ap.add_argument("--data", default=fp.DATA, help="one TV's data (fp/, events.jsonl); default: $ADSHUT_DATA or ~/.local/share/adshut")
     ap.add_argument("--templates", help="shared template library (default: DATA/templates)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--mine", action="store_true", help="also mine mute templates from inside muted breaks")
     args = ap.parse_args()
-    learner = Learner(os.path.expanduser(args.data), dry_run=args.dry_run, templates_dir=args.templates)
+    learner = Learner(os.path.expanduser(args.data), dry_run=args.dry_run, templates_dir=args.templates,
+                      mine=args.mine)
     if args.all:
         learner.state = {"labels_done": 0.0, "feedback_done": 0.0}
     results = learner.run()
     for r in results:
         print("%s -> %d %s template(s)%s" % (r["label"], len(r["added"]), r["kind"],
                                              "" if r["resolved"] else ", pending"))
+        for a in r["added"]:
+            print("    + " + a)
+        for n in r["skipped"]:
+            print("    - " + n)
+    for r in learner.mined:
+        print("%s -> %d mined template(s)" % (r["label"], len(r["added"])))
         for a in r["added"]:
             print("    + " + a)
         for n in r["skipped"]:

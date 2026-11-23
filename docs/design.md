@@ -92,6 +92,14 @@ library. The labels are the viewer's own mute and unmute presses.
 - **First sightings**: when nothing before a press has aired before, the 8 s before it are cut
   into overlapping 4 s provisional pieces and the press stays pending for 14 days; once its
   material recurs, exact templates replace the pieces.
+- **Mined templates** (optional, `learn.py --mine`): after each muted break of at least 90 s ends,
+  its interior (minus 10 s at the start and 60 s at the end, where presses lag the picture) is
+  correlated against the history. Moving material that also aired in another break, and passes
+  the mute-candidate checks, becomes a "mined" start template (at most 5 s, threshold 0.9). Mined
+  material only ever mutes: inside a break it does nothing, and it catches breaks that began
+  unnoticed or sound that came back too early. It never becomes an unmute marker, which
+  mid-break material would make dangerous. At most 25 per channel stay enabled (most airings in
+  breaks first), because every template costs the TV time on every frame.
 - **Feedback**: a detector action reversed within 30 s is a strike for the template that caused
   it; one that stands is a success. A template with more strikes than successes is disabled.
 
