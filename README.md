@@ -166,12 +166,14 @@ that counts against the template that caused it.
 ```sh
 ./tests.sh                                   # Python and Java against the same fixtures
 PYTHONPATH=python python3 python/tests/make_fixtures.py   # regenerate fixtures (on purpose only)
+PYTHONPATH=python python3 python/tests/e2e_command_host.py # Raspberry-Pi-style host end to end, no hardware (~2 min)
 ```
 
 There are two implementations of the live loop: Java on the TV and Python on Linux. Each
 change to the core must keep them in agreement: `tests.sh` checks the features, the detector's
-decisions, the screen finder and the fingerprints against `spec/fixtures`. All fixtures are
-synthetic, drawn by `make_fixtures.py`; the repository contains no recorded broadcast or camera
+decisions, the screen finder and the fingerprints against `spec/fixtures`. The end-to-end test
+runs a host with a fake camera program, IR blaster, IR receiver and a local template server.
+All test material is synthetic, drawn by `python/tests/synthetic.py`; the repository contains no recorded broadcast or camera
 material, and contributions must not add any.
 
 `python/adshut/tools/` has offline tools for a data directory: `replay` (detector over a

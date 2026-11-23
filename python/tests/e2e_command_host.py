@@ -3,18 +3,19 @@
 # Copyright (C) 2026 Alpar Sandor
 """End-to-end test of a host as on a Raspberry Pi with a non-smart TV, without hardware:
 
-  frames   'command' source: tests/mjpeg_out.py writes recorded frames as MJPEG at 10 fps
+  frames   'command' source: tests/mjpeg_out.py plays a synthetic camera loop (tests/synthetic.py:
+           an invented room and TV; 12 s programme, a 5 s channel ident, 13 s of ads) at 10 fps
   TV       'command' adapter: the toggle and toast commands append to ir.log (an IR blaster)
   remote   a named pipe stands in for the IR receiver's input device (KEY_MUTE events)
-  server   a local template server with one template for channel "tv" and a token
+  server   a local template server with a token and one template for channel "tv": the ident as
+           fingerprinted from an earlier, differently exposed airing
 
 Checks: the template set syncs down, the detector toggles mute (once, at 5 fps from a 10 fps
 source), a key press right after our own transmission is ignored as an echo, a later press is
 taken as the user's unmute, and fingerprints and events are uploaded.
 
     PYTHONPATH=python python3 python/tests/e2e_command_host.py
-Needs android/testdata/set1.u8 (recorded camera frames) and build/e2e from the fake-app test
-(for a template); see README.
+Self-contained: everything it shows the host is drawn by tests/synthetic.py. Takes about 2 minutes.
 """
 import json
 import os
@@ -29,7 +30,44 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 B = os.path.join(ROOT, "build", "pi")
 PY = os.path.join(ROOT, "python")
 ENV = dict(os.environ, PYTHONPATH=PY)
-FRAMES = os.path.join(ROOT, "android", "testdata", "set1.u8")
+FPS = 10
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PY)
+import numpy as np  # noqa: E402
+
+from adshut.fingerprint import Fingerprinter, decode  # noqa: E402
+from adshut.library import Library  # noqa: E402
+from synthetic import CORNERS, Camera, ident, render, scene  # noqa: E402
+
+
+def make_loop(path):
+    """The camera loop the host watches: programme, opening ident, ads (30 s at FPS)."""
+    rng = np.random.default_rng(3)
+    cam = Camera(rng)
+    with open(path, "wb") as out:
+        for seconds, shot_s in ((12, 3), ("ident", 5), (13, 6.5)):
+            if seconds == "ident":
+                for k in range(shot_s * FPS):
+                    out.write(cam.jpeg(ident(0, k * 5.0 / FPS, 180, 320)))
+                continue
+            for j in range(int(seconds / shot_s)):
+                sc = scene(rng)
+                for k in range(int(shot_s * FPS)):
+                    out.write(cam.jpeg(render(sc, k * 5.0 / FPS, 180, 320)))
+
+
+def make_template(data):
+    """The opening ident as a learner would have cut it from an earlier airing (other camera noise
+    and exposure), 5 s at the fingerprint rate."""
+    cam = Camera(np.random.default_rng(4))
+    fpr = Fingerprinter(CORNERS)
+    zs = []
+    for k in range(25):
+        ycc = ident(0, k, 180, 320)
+        ycc[..., 0] = ycc[..., 0] * 0.9 + 8
+        zs.append(fpr.zones(fpr.rectify(decode(cam.jpeg(ycc)))))
+    return Library(data).add("tv", "start", np.array(zs), time.time() - 86400, "synthetic e2e ident")
 
 
 def run(*cmd, **kw):
@@ -38,25 +76,21 @@ def run(*cmd, **kw):
 
 def main():
     shutil.rmtree(B, ignore_errors=True)
-    os.makedirs(os.path.join(B, "server", "fp"))
-    # a template for channel "tv", cut from the fake-app test's recording
-    start, day = open(os.path.join(ROOT, "build", "e2e", "tpl_start")).read().split()
-    for f in os.listdir(os.path.join(ROOT, "build", "e2e", "data", "fp")):
-        shutil.copy(os.path.join(ROOT, "build", "e2e", "data", "fp", f), os.path.join(B, "server", "fp"))
-    run("python3", "-m", "adshut.tools.addtpl", "tv", "start", start, "5.0", "--day", day, "--data", B + "/server")
-    shutil.rmtree(os.path.join(B, "server", "fp"))
+    os.makedirs(os.path.join(B, "server"))
+    loop = os.path.join(B, "camera.mjpg")
+    make_loop(loop)
+    print("template", make_template(B + "/server"))
     token = run("python3", "-m", "adshut.server", "--data", B + "/server", "--add-tv", "pi-test")
     keys = os.path.join(B, "keys")
     os.mkfifo(keys)
     irlog = os.path.join(B, "ir.log")
-    corners = json.load(open(os.path.join(ROOT, "data", "calibration.json")))["corners"]
     cfg = {
         "data_dir": B + "/host",
-        "source": {"type": "command", "cmd": ["python3", PY + "/tests/mjpeg_out.py", FRAMES, "320", "180", "10"]},
+        "source": {"type": "command", "cmd": ["python3", PY + "/tests/mjpeg_out.py", loop, str(FPS)]},
         "tv": {"type": "command", "toggle": "echo toggle >> " + irlog, "toast": "echo 'toast {text}' >> " + irlog,
                "channel": "tv", "keys": {"device": keys, "mute": 113}},
         "server": {"url": "http://127.0.0.1:18766", "tv": "pi-test", "token": token},
-        "corners": corners, "auto_calibrate": False, "detector": "active", "toasts": True,
+        "corners": CORNERS, "auto_calibrate": False, "detector": "active", "toasts": True,
     }
     json.dump(cfg, open(B + "/host.json", "w"))
     srv = subprocess.Popen(["python3", "-m", "adshut.server", "--data", B + "/server", "--port", "18766",
