@@ -103,6 +103,11 @@ library. The labels are the viewer's own mute and unmute presses.
 - **Feedback**: a detector action reversed within 30 s is a strike for the template that caused
   it; one that stands is a success. A template with more strikes than successes is disabled.
 
+A learner run publishes the library index once, at its end, so TVs never download templates
+that validation or the cap have not yet checked. `learn.py --history DIR` adds older recordings
+of the same TV (for example from a host it replaced) as history. On a server, `learn-all.sh`
+passes `ADSHUT_LEARN_ARGS` to every run and a TV's `DATA/tvs/<id>/learn.args` to that TV's.
+
 Templates live in `DATA/templates/` (`index.json` + `.npz`). An entry can be switched off with
 `"enabled": false`; hosts pick up changes within 30 s.
 

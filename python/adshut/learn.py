@@ -59,6 +59,8 @@ gets a strike, one that stood a success; a template with more strikes than succe
     learn.py            process new labels and feedback since the last run
     learn.py --all      start over: reprocess every label in the recording
     learn.py --dry-run  show what would be learned, change nothing
+    learn.py --mine     also mine mute templates from inside muted breaks
+    learn.py --history DIR   older recordings of the same TV (e.g. from a host it replaced)
 """
 import argparse
 import json
@@ -159,8 +161,9 @@ def detector_actions(events):
 
 
 class Learner:
-    def __init__(self, data=fp.DATA, dry_run=False, templates_dir=None, mine=False):
+    def __init__(self, data=fp.DATA, dry_run=False, templates_dir=None, mine=False, history=()):
         self.data = data
+        self.extra = [os.path.expanduser(h) for h in history]   # older recordings of the same TV
         self.mine_enabled = mine
         self.mined = []
         self.dry = dry_run
@@ -175,11 +178,33 @@ class Learner:
 
     def timeline(self, day):
         if day not in self.timelines:
-            self.timelines[day] = fp.Timeline(fp.load_records(day, self.data))
+            parts = [fp.load_records(day, d) for d in [self.data] + self.extra
+                     if os.path.exists(os.path.join(d, "fp", day + ".bin"))]
+            recs = np.concatenate(parts) if parts else np.zeros(0, fp.REC)
+            self.timelines[day] = fp.Timeline(recs[np.argsort(recs["t"], kind="stable")])
         return self.timelines[day]
 
+    def events(self):
+        """This TV's events, preceded by those of the --history recordings from before they start."""
+        own = fp.load_events(self.data)
+        start = min((e["t"] for e in own), default=float("inf"))
+        older = [e for d in self.extra if os.path.exists(os.path.join(d, "events.jsonl"))
+                 for e in fp.load_events(d) if e["t"] < start]
+        return sorted(older, key=lambda e: e["t"]) + own
+
     def run(self):
-        events = fp.load_events(self.data)
+        # The index is written once at the end: templates added in this run are only published
+        # after validation and the mined-template cap have had their say.
+        self.lib.deferred = True
+        try:
+            return self._run()
+        finally:
+            self.lib.deferred = False
+            if not self.dry:
+                self.lib.save(force=True)
+
+    def _run(self):
+        events = self.events()
         now = time.time()
         # A label is only processed once its window is safely recorded and its toggle check is final.
         ready = now - TOGGLE_S - 5
@@ -277,7 +302,8 @@ class Learner:
                     self.disable(e["name"], "over the cap of %d mined templates" % MAX_MINED)
 
     def history(self):
-        days = sorted(f[:-4] for f in os.listdir(os.path.join(self.data, "fp")) if f.endswith(".bin"))
+        days = sorted({f[:-4] for d in [self.data] + self.extra if os.path.isdir(os.path.join(d, "fp"))
+                       for f in os.listdir(os.path.join(d, "fp")) if f.endswith(".bin")})
         return [self.timeline(d) for d in days[-HISTORY_DAYS:]]
 
     def learn_from(self, lab, first):
@@ -522,9 +548,11 @@ def main():
     ap.add_argument("--templates", help="shared template library (default: DATA/templates)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--mine", action="store_true", help="also mine mute templates from inside muted breaks")
+    ap.add_argument("--history", action="append", default=[],
+                    help="older recordings of the same TV (a data directory), used as history only")
     args = ap.parse_args()
     learner = Learner(os.path.expanduser(args.data), dry_run=args.dry_run, templates_dir=args.templates,
-                      mine=args.mine)
+                      mine=args.mine, history=args.history)
     if args.all:
         learner.state = {"labels_done": 0.0, "feedback_done": 0.0}
     results = learner.run()

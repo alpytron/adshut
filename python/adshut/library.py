@@ -44,7 +44,11 @@ class Library:
     def changed_on_disk(self):
         return os.path.exists(self.index_file) and os.path.getmtime(self.index_file) != self.mtime
 
-    def save(self):
+    def save(self, force=False):
+        """Writes the index (atomically). While `deferred` is set (a learner run in progress), only
+        a forced save writes, so hosts and TVs never load a half-checked library."""
+        if getattr(self, "deferred", False) and not force:
+            return
         tmp = self.index_file + ".tmp"
         with open(tmp, "w") as f:
             json.dump(self.entries, f, ensure_ascii=False, indent=1)
