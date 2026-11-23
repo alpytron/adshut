@@ -36,6 +36,7 @@ public class SettingsActivity extends Activity {
     private RadioGroup mode;
     private CheckBox toasts, lanFrames;
     private TextView result;
+    private ScrollView scroll;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +48,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(pad * 3, pad, pad * 3, pad);
         col.setBackgroundColor(0xff181818);
 
-        col.addView(text("adshut · settings", 30, Color.WHITE));
+        col.addView(text("AdShut · settings", 30, Color.WHITE));
         col.addView(label("Template server URL"));
         server = edit(cfg.server(), "e.g. http://192.168.1.10:8766", InputType.TYPE_TEXT_VARIATION_URI);
         col.addView(server);
@@ -123,11 +124,26 @@ public class SettingsActivity extends Activity {
             }
         });
 
-        ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(0xff181818);
-        sv.addView(col);
-        setContentView(sv);
-        server.requestFocus();
+        // DOWN from the last checkbox goes to the first button (by geometry it would reach BACK)
+        test.setId(View.generateViewId());
+        lanFrames.setNextFocusDownId(test.getId());
+
+        scroll = new ScrollView(this);
+        scroll.setBackgroundColor(0xff181818);
+        scroll.addView(col);
+        setContentView(scroll);
+        server.requestFocus();      // the keyboard opens only on OK (stateAlwaysHidden in the manifest)
+    }
+
+    /** Shows a result line and scrolls it into view (it sits below the buttons). */
+    private void show(String msg) {
+        result.setText(msg);
+        scroll.post(new Runnable() {
+            @Override
+            public void run() {
+                scroll.smoothScrollTo(0, result.getBottom());
+            }
+        });
     }
 
     private String serverValue() {
@@ -147,7 +163,7 @@ public class SettingsActivity extends Activity {
     private void save() {
         String err = check(serverValue(), tv.getText().toString().trim());
         if (err != null) {
-            result.setText(err);
+            show(err);
             return;
         }
         String[][] kv = {{"server", serverValue()}, {"tv", tv.getText().toString().trim()},
@@ -155,7 +171,7 @@ public class SettingsActivity extends Activity {
         for (String[] p : kv) {
             String e = cfg.set(p[0], p[1]);
             if (e != null) {
-                result.setText(e);
+                show(e);
                 return;
             }
         }
@@ -168,7 +184,7 @@ public class SettingsActivity extends Activity {
         if (s != null) {
             s.settingsChanged();
         }
-        result.setText("Saved.");
+        show("Saved.");
     }
 
     static String check(String url, String id) {
@@ -188,10 +204,10 @@ public class SettingsActivity extends Activity {
             err = "Server URL, TV id and token are all needed for a test";
         }
         if (err != null) {
-            result.setText(err);
+            show(err);
             return;
         }
-        result.setText("Testing…");
+        show("Testing…");
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -199,7 +215,7 @@ public class SettingsActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        result.setText(msg);
+                        show(msg);
                     }
                 });
             }
@@ -281,6 +297,25 @@ public class SettingsActivity extends Activity {
         b.setText(s);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         b.setGravity(Gravity.CENTER);
+        // The default button look shows no focus on this TV: a remote needs to see where it is.
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[] {android.R.attr.state_focused}, rounded(0xff4a90e2));
+        bg.addState(new int[] {android.R.attr.state_pressed}, rounded(0xff4a90e2));
+        bg.addState(new int[0], rounded(0xff3a3a3a));
+        b.setBackground(bg);
+        b.setTextColor(Color.WHITE);
+        b.setPadding(dp(20), dp(10), dp(20), dp(10));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, dp(16), 0);
+        b.setLayoutParams(lp);
         return b;
+    }
+
+    private android.graphics.drawable.GradientDrawable rounded(int color) {
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(6));
+        return d;
     }
 }

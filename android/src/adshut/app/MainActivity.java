@@ -285,7 +285,7 @@ public class MainActivity extends Activity implements CamService.SetupSink {
             float tx = pv.right + pad * 1.5f, ty = panel.top + pad + H * 0.03f, lh = H * 0.032f;
             text.setTextSize(H * 0.032f);
             text.setColor(Color.WHITE);
-            cv.drawText("adshut · camera setup", tx, ty, text);
+            cv.drawText("AdShut · camera setup", tx, ty, text);
             text.setTextSize(H * 0.024f);
             text.setColor(0xffcfcfcf);
             ty += lh * 1.5f;
@@ -307,7 +307,7 @@ public class MainActivity extends Activity implements CamService.SetupSink {
                 JSONObject st = s.liveStatus();
                 ty += lh * 0.5f;
                 cv.drawText("Mode " + st.optString("mode") + ",  templates " + st.optInt("templates")
-                        + ",  " + st.optDouble("ms_per_frame") + " ms/frame", tx, ty, text);
+                        + String.format(",  %.0f ms per frame", st.optDouble("ms_per_frame")), tx, ty, text);
                 ty += lh;
                 cv.drawText("Server: " + st.optString("sync"), tx, ty, text);
             }
