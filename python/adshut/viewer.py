@@ -21,12 +21,15 @@ import json
 import os
 import re
 import struct
+import threading
+import time
 from datetime import datetime, timedelta
 
 import numpy as np
 
 from adshut import fp
 from adshut import match
+from adshut import library
 from adshut.library import Library
 
 HOST = "_host"
@@ -39,6 +42,7 @@ TOGGLE_S = 10             # a user mute shorter than this is a quick toggle, not
 MAX_FRAMES = 6000         # /frames: at most 20 minutes at 5 fps per request
 MAX_STRIP = 4000
 MAX_SCORE_S = 45 * 60
+_review_lock = threading.Lock()
 STRIDE_TARGET = 250000    # strip statistics look at about this many frames at most
 
 
@@ -211,9 +215,78 @@ class Viewer:
     def templates(self):
         try:
             with open(os.path.join(self.tpl, "index.json")) as f:
-                return json.load(f)
+                entries = json.load(f)
         except (OSError, ValueError):
             return []
+        return library.apply_review(entries, self.tpl)
+
+    def review_list(self):
+        """Template index for the review page: each entry with the client it was cut from (stored,
+        or the client that recorded that moment) and what it did according to the detector logs."""
+        entries = self.templates()
+        cids = [c["id"] for c in self.clients()]
+        cover = {c: self.coverage(c) for c in cids}
+        stats = {}
+        for c in cids:
+            for e in self.events(c):
+                if e["type"] != "detector" or not e.get("template"):
+                    continue
+                st = stats.setdefault(e["template"], {"hits": 0, "mutes": 0, "unmutes": 0, "last": None,
+                                                      "best": None, "clients": []})
+                if e.get("action") == "hit":
+                    st["hits"] += 1
+                    sc = e.get("score")
+                    if isinstance(sc, (int, float)):
+                        st["best"] = max(st["best"] or 0, sc)
+                elif e.get("action") == "mute":
+                    st["mutes"] += 1
+                elif e.get("action") == "unmute":
+                    st["unmutes"] += 1
+                st["last"] = max(st["last"] or 0, e["t"])
+                if c not in st["clients"]:
+                    st["clients"].append(c)
+        for e in entries:
+            src = e.get("client")
+            if not src and e.get("source"):
+                src = next((c for c in cids if any(a <= e["source"] <= b for a, b in cover[c])), None)
+            e["source_client"] = src
+            e["activity"] = stats.get(e["name"], {"hits": 0, "mutes": 0, "unmutes": 0, "last": None,
+                                                  "best": None, "clients": []})
+        return entries
+
+    def template_zones(self, name):
+        if not re.match(r"^[A-Za-z0-9._-]{1,120}$", name):
+            return None
+        try:
+            return np.load(os.path.join(self.tpl, name + ".npz"))["zones"].astype(np.uint8).tobytes()
+        except (OSError, KeyError, ValueError):
+            return None
+
+    def template_hits(self, name):
+        """Every detector log line naming the template, newest first, with its client."""
+        out = []
+        for c in [c["id"] for c in self.clients()]:
+            for e in self.events(c):
+                if e["type"] == "detector" and e.get("template") == name:
+                    out.append(dict(e, client=c))
+        return sorted(out, key=lambda e: -e["t"])
+
+    def set_review(self, name, enabled, note, by):
+        """Stores (enabled True/False) or clears (None) an admin's decision about a template."""
+        if not any(e["name"] == name for e in self.templates()):
+            return False
+        with _review_lock:
+            review = library.load_review(self.tpl)
+            if enabled is None:
+                review.pop(name, None)
+            else:
+                review[name] = {"enabled": bool(enabled), "by": by, "t": round(time.time(), 1),
+                                "note": str(note or "")[:500]}
+            path = os.path.join(self.tpl, library.REVIEW)
+            with open(path + ".tmp", "w") as f:
+                json.dump(review, f, ensure_ascii=False, indent=1)
+            os.replace(path + ".tmp", path)
+        return True
 
     def scores(self, client, t0, t1, points=1500):
         """Best start- and end-template score over [t0, t1) for the channel on at each moment,

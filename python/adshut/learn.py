@@ -168,6 +168,8 @@ class Learner:
         self.mined = []
         self.dry = dry_run
         self.lib = Library(data, templates_dir)
+        parent = os.path.basename(os.path.dirname(os.path.normpath(os.path.abspath(data))))
+        self.lib.client = os.path.basename(os.path.normpath(data)) if parent == "tvs" else "_host"
         self.state_file = os.path.join(data, STATE)
         try:
             with open(self.state_file) as f:

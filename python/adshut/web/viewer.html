@@ -21,8 +21,10 @@ body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -app
 button, select, input { font: inherit; color: inherit; }
 select, input[type=password], input[type=text] {
   background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-button:hover { border-color: var(--accent); }
+button, a.btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  color: inherit; text-decoration: none; display: inline-block; }
+button:hover, a.btn:hover { border-color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -133,6 +135,7 @@ header .grow { flex: 1; }
     <h1>AdShut <span>recordings</span></h1>
     <label>Client <select id="client"></select></label>
     <label>Day <select id="day"></select></label>
+    <a class="btn" href="/ui/templates" id="totemplates" title="Review the template library (T)">Templates</a>
     <span class="grow"></span>
     <span id="busy" title="loading"></span>
     <button id="reload" title="Reload the client's data (R)">Reload</button>
@@ -759,6 +762,7 @@ function reallyDraw() {
   const tp = tr.templates;
   for (const t of Object.values(S.templates)) {
     if (!t.source || t.source + (t.seconds || 5) < t0 || t.source > t1) continue;
+    if (t.client && t.client !== S.client.id) continue;
     if (S.ov.channels.length) { const ch = stateAt(S.ov.channels, t.source); if (ch && ch[2] !== t.channel) continue; }
     const col = t.kind === "start" ? COL.det : t.kind === "end" ? COL.end : COL.dim;
     g.globalAlpha = t.enabled === false ? 0.3 : 1;
@@ -775,6 +779,12 @@ function reallyDraw() {
   g.fillStyle = COL.panel; g.fillRect(0, 0, LBL, 22);
 }
 
+function templatesAt(t) {
+  const slack = 6 * (S.view.t1 - S.view.t0) / tlW;
+  return Object.values(S.templates).filter(tp => tp.source && (!tp.client || tp.client === S.client.id)
+    && t >= tp.source - slack && t <= tp.source + (tp.seconds || 5) + slack
+    && (!S.ov.channels.length || (stateAt(S.ov.channels, tp.source) || [0, 0, tp.channel])[2] === tp.channel));
+}
 // hover tooltips
 let hoverX = null;
 function trackAt(yy) { return TRACKS.find(t => yy >= t.y && yy < t.y + t.h + 4); }
@@ -803,9 +813,9 @@ function tipFor(tr, t, x) {
       if (i >= 0 && i < s.n) for (const k of ["start", "end"]) if (s[k][i] != null && s[k][i] > -1)
         out.push(`best ${k}: <b>${s[k][i].toFixed(3)}</b> <small>${esc(s.names[s[k + "_tpl"][i]] || "")}</small>`);
       break; }
-    case "templates": for (const tp of Object.values(S.templates))
+    case "templates": for (const tp of templatesAt(t))
       if (tp.source && t >= tp.source - 2 * (S.view.t1 - S.view.t0) / tlW * 3 && t <= tp.source + (tp.seconds || 5))
-        out.push(`<b>${esc(tp.name)}</b> ${tp.enabled === false ? "(disabled)" : ""}<br><small>${esc(tp.kind)} · ${esc(tp.origin)} · threshold ${tp.threshold ?? 0.8}${tp.successes ? " · " + tp.successes + " ok" : ""}${tp.strikes ? " · " + tp.strikes + " strikes" : ""}<br>${esc(tp.note || "")}</small>`);
+        out.push(`<b>${esc(tp.name)}</b> ${tp.enabled === false ? "(disabled)" : ""}<br><small>${esc(tp.kind)} · ${esc(tp.origin)} · threshold ${tp.threshold ?? 0.8}${tp.successes ? " · " + tp.successes + " ok" : ""}${tp.strikes ? " · " + tp.strikes + " strikes" : ""}<br>${esc(tp.note || "")}</small><br><small style="color:var(--accent)">double-click: open in template review</small>`);
       break;
   }
   return out;
@@ -846,6 +856,7 @@ tlc.addEventListener("dblclick", ev => {
   if (tr && tr.id === "sound") { const m = mutedAt(t); if (m) s = [m.start, m.end]; }
   else if (tr && tr.id === "channel") { const c = stateAt(S.ov.channels, t); if (c) s = [c[0], c[1]]; }
   else if (tr && tr.id === "tv") { const a = stateAt(S.ov.apps, t); if (a) s = [a[0], a[1]]; }
+  else if (tr && tr.id === "templates") { const tp = templatesAt(t)[0]; if (tp) location.href = "/ui/templates#t=" + encodeURIComponent(tp.name); return; }
   if (s) { const m = Math.max(10, (s[1] - s[0]) * 0.1); setView(s[0] - m, s[1] + m); }
 });
 tlc.addEventListener("wheel", ev => {
@@ -918,6 +929,7 @@ document.addEventListener("keydown", e => {
     case ".": jumpEvent(1, S.ov.verdicts); break;
     case "f": case "F": fitProg(); break;
     case "r": case "R": $("reload").click(); break;
+    case "t": case "T": $("totemplates").click(); break;
     case "c": case "C": setView(S.cursor - sp / 2, S.cursor + sp / 2); break;
     default: return;
   }

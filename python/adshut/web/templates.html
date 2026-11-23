@@ -1,0 +1,410 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2026 Alpar Sandor -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdShut Templates</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0e1014; --panel: #161a20; --panel2: #1c2129; --line: #2a313b; --text: #d9dee5;
+  --dim: #8a94a3; --faint: #5b6573; --accent: #4fa3ff;
+  --start: #e5484d; --end: #3dd68c; --boundary: #6b7280; --warn: #ffd23f; --off: #3a4049;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+select, input[type=search], input[type=password], textarea {
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+button, a.btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  text-decoration: none; display: inline-block; }
+button:hover, a.btn:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, select:focus-visible, a:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a { color: var(--accent); }
+
+header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; letter-spacing: .02em; }
+header h1 span { color: var(--dim); font-weight: 400; }
+header .grow { flex: 1; }
+#bar { display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--line); }
+#bar label { color: var(--dim); display: flex; gap: 6px; align-items: center; }
+#bar .chips { display: flex; gap: 4px; }
+#bar .chips button { padding: 3px 9px; }
+#count { color: var(--dim); margin-left: auto; }
+#q { width: 220px; }
+#summary { display: flex; gap: 18px; padding: 8px 14px 0; color: var(--dim); flex-wrap: wrap; }
+#summary b { color: var(--text); font-weight: 600; }
+
+#layout { display: grid; grid-template-columns: minmax(0, 1fr); }
+#layout.detail { grid-template-columns: minmax(0, 1fr) 460px; }
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; padding: 12px 14px 40px; align-content: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer;
+  display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 4px 10px; border-left: 3px solid var(--boundary); }
+.card:hover { border-color: #3b4552; }
+.card.sel { box-shadow: 0 0 0 2px var(--accent); }
+.card.k-start { border-left-color: var(--start); }
+.card.k-end { border-left-color: var(--end); }
+.card.off { opacity: .55; }
+.card canvas.prev { width: 160px; height: 90px; background: #000; border-radius: 4px; display: block; }
+.card canvas.film { grid-column: 1 / -1; width: 100%; height: 26px; background: #000; border-radius: 3px; display: block; }
+.card .meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.card .name { font-family: var(--mono); font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badges { display: flex; gap: 4px; flex-wrap: wrap; }
+.b { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--panel2); border: 1px solid var(--line); white-space: nowrap; }
+.b.start { background: var(--start); border-color: var(--start); color: #fff; }
+.b.end { background: var(--end); border-color: var(--end); color: #062; }
+.b.boundary { background: var(--boundary); border-color: var(--boundary); color: #fff; }
+.b.disabled { background: var(--off); color: var(--dim); }
+.b.reviewed { border-color: var(--accent); color: var(--accent); }
+.b.prov { border-color: var(--warn); color: var(--warn); }
+.stats { display: flex; gap: 10px; flex-wrap: wrap; color: var(--dim); font-size: 12px; }
+.stats b { color: var(--text); font-weight: 600; }
+.note { color: var(--faint); font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; grid-column: 1 / -1; }
+.bad { color: var(--start); } .good { color: var(--end); }
+.empty { color: var(--faint); padding: 30px 14px; }
+
+#detail { border-left: 1px solid var(--line); background: var(--panel); position: sticky; top: 49px; height: calc(100vh - 49px);
+  overflow: auto; padding: 14px; display: none; }
+#layout.detail #detail { display: block; }
+#detail h2 { font-size: 14px; margin: 0 0 6px; font-family: var(--mono); word-break: break-all; font-weight: 600; }
+#detail .big { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; display: block; }
+#detail .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+#detail .scrub { width: 100%; }
+#detail dl { display: grid; grid-template-columns: 120px 1fr; gap: 3px 10px; margin: 10px 0; }
+#detail dt { color: var(--dim); }
+#detail dd { margin: 0; word-break: break-word; }
+#detail h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 16px 0 6px; }
+#detail textarea { width: 100%; min-height: 54px; resize: vertical; }
+.hit { display: grid; grid-template-columns: 150px 1fr; gap: 8px; padding: 4px 6px; border-radius: 4px; font-size: 12px; }
+.hit:hover { background: var(--panel2); }
+.hit .t { font-family: var(--mono); color: var(--dim); }
+#msg { min-height: 1.2em; color: var(--dim); font-size: 12px; }
+.x { float: right; }
+
+#login { position: fixed; inset: 0; background: #000b; display: none; align-items: center; justify-content: center; z-index: 20; }
+#login form { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; width: min(420px, 92vw);
+  display: flex; flex-direction: column; gap: 10px; }
+#login h2 { margin: 0; font-size: 16px; }
+#login p { margin: 0; color: var(--dim); }
+#login code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+#login .err { color: var(--start); min-height: 1em; }
+
+@media (max-width: 1000px) {
+  #layout.detail { grid-template-columns: minmax(0, 1fr); }
+  #detail { position: fixed; inset: 0; top: 0; height: 100vh; z-index: 10; }
+}
+@media (max-width: 520px) {
+  #grid { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 40px; }
+  .card { grid-template-columns: minmax(0, 1fr); }
+  .card canvas.prev { width: 100%; height: auto; aspect-ratio: 16/9; }
+  #q { width: 100%; }
+  header, #bar { padding-left: 16px; padding-right: 16px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>AdShut <span>templates</span></h1>
+  <a class="btn" href="/ui/" id="toviewer">&#x25C0; Recordings</a>
+  <span class="grow"></span>
+  <button id="reload" title="Reload (R)">Reload</button>
+  <button id="logout">Sign out</button>
+</header>
+<div id="bar">
+  <label>Channel <select id="channel"></select></label>
+  <div class="chips" id="kind">
+    <button data-v="" class="on">all</button><button data-v="start">start</button><button data-v="end">end</button><button data-v="boundary">boundary</button>
+  </div>
+  <label>Origin <select id="origin"><option value="">any</option></select></label>
+  <label>State <select id="state">
+    <option value="">any</option><option value="enabled" selected>enabled</option><option value="disabled">disabled</option>
+    <option value="reviewed">reviewed by an admin</option><option value="striked">with strikes</option><option value="unused">never hit</option>
+  </select></label>
+  <label>Sort <select id="sort">
+    <option value="source">newest cut</option><option value="hits">most hits</option><option value="strikes">most strikes</option>
+    <option value="recurrences">most recurrences</option><option value="lasthit">last hit</option><option value="name">name</option>
+  </select></label>
+  <input type="search" id="q" placeholder="search name or note" aria-label="Search">
+  <span id="count"></span>
+</div>
+<div id="summary"></div>
+<div id="layout">
+  <div id="grid"></div>
+  <aside id="detail" aria-live="polite"></aside>
+</div>
+<div id="login">
+  <form id="loginform">
+    <h2>Admin token</h2>
+    <p>Create one on the server with <code>python3 -m adshut.server --add-admin NAME</code>.</p>
+    <input type="password" id="tok" placeholder="token" autocomplete="off" aria-label="Admin token">
+    <label><input type="checkbox" id="remember" checked> remember on this browser</label>
+    <div class="err" id="loginerr"></div>
+    <button type="submit">Open</button>
+  </form>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const RATE = 5, ZB = 432;
+let token = null;
+try { token = localStorage.getItem("adshut.token"); } catch (e) {}
+const S = { all: [], kind: "", sel: null, zones: new Map(), clients: [] };
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function when(t) { if (!t) return "–"; const d = new Date(t * 1000);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); }
+function ago(t) { if (!t) return "never"; const s = Date.now() / 1000 - t;
+  return s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: { Authorization: "Bearer " + (token || ""), ...(opt.body ? { "Content-Type": "application/json" } : {}) } });
+  if (r.status === 401) { showLogin("The token was not accepted."); throw new Error("auth"); }
+  if (!r.ok) throw new Error(path + ": " + r.status);
+  return opt.binary ? r.arrayBuffer() : r.json();
+}
+function showLogin(msg) { $("login").style.display = "flex"; $("loginerr").textContent = msg || ""; $("tok").focus(); }
+$("loginform").addEventListener("submit", e => {
+  e.preventDefault(); token = $("tok").value.trim();
+  try { if ($("remember").checked) localStorage.setItem("adshut.token", token); } catch (x) {}
+  $("login").style.display = "none"; load();
+});
+$("logout").onclick = () => { try { localStorage.removeItem("adshut.token"); } catch (e) {} token = null; showLogin(); };
+
+// ------------------------------------------------------------------ drawing
+function paint(canvas, z, frame) {
+  const g = canvas.getContext("2d"), tiny = paint.tiny || (paint.tiny = document.createElement("canvas"));
+  tiny.width = 16; tiny.height = 9;
+  const tg = tiny.getContext("2d"), img = tg.createImageData(16, 9), d = img.data, off = frame * ZB;
+  for (let i = 0; i < 144; i++) {
+    const y = z[off + i * 3], cb = z[off + i * 3 + 1] - 128, cr = z[off + i * 3 + 2] - 128;
+    d[i * 4] = y + 1.402 * cr; d[i * 4 + 1] = y - 0.344136 * cb - 0.714136 * cr; d[i * 4 + 2] = y + 1.772 * cb; d[i * 4 + 3] = 255;
+  }
+  tg.putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = !canvas.blocks; g.imageSmoothingQuality = "high";
+  g.drawImage(tiny, 0, 0, canvas.width, canvas.height);
+  if (canvas.blocks) {
+    g.strokeStyle = "rgba(0,0,0,.35)"; g.beginPath();
+    for (let x = 1; x < 16; x++) { g.moveTo(Math.round(x * canvas.width / 16) + .5, 0); g.lineTo(Math.round(x * canvas.width / 16) + .5, canvas.height); }
+    for (let y = 1; y < 9; y++) { g.moveTo(0, Math.round(y * canvas.height / 9) + .5); g.lineTo(canvas.width, Math.round(y * canvas.height / 9) + .5); }
+    g.stroke();
+  }
+}
+function filmstrip(canvas, z) {
+  const n = z.length / ZB, w = canvas.clientWidth || 320, h = 26, dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d"), tw = h * 16 / 9 * dpr, k = Math.max(1, Math.floor(canvas.width / tw));
+  const tmp = document.createElement("canvas"); tmp.width = Math.round(tw); tmp.height = canvas.height;
+  for (let i = 0; i < k; i++) {
+    const f = Math.min(n - 1, Math.floor((i + .5) * n / k));
+    paint(tmp, z, f); g.drawImage(tmp, Math.round(i * canvas.width / k), 0, Math.ceil(canvas.width / k) - dpr, canvas.height);
+  }
+}
+
+// zones: lazy, a few at a time
+const queue = [], waiting = new Map();
+let active = 0;
+function zonesOf(name) {
+  if (S.zones.has(name)) return Promise.resolve(S.zones.get(name));
+  if (waiting.has(name)) return waiting.get(name);
+  const p = new Promise(res => queue.push([name, res]));
+  waiting.set(name, p); pump(); return p;
+}
+function pump() {
+  while (active < 6 && queue.length) {
+    const [name, res] = queue.shift(); active++;
+    api("/v1/admin/templates/" + encodeURIComponent(name) + ".zones", { binary: true })
+      .then(b => { const z = new Uint8Array(b); S.zones.set(name, z); res(z); })
+      .catch(() => res(null)).finally(() => { active--; waiting.delete(name); pump(); });
+  }
+}
+const seen = new IntersectionObserver(entries => {
+  for (const en of entries) if (en.isIntersecting) {
+    const card = en.target; seen.unobserve(card);
+    zonesOf(card.dataset.name).then(z => { if (z && card.isConnected) { paint(card.querySelector(".prev"), z, 0); filmstrip(card.querySelector(".film"), z); } });
+  }
+}, { rootMargin: "300px" });
+
+// ------------------------------------------------------------------ list
+async function load() {
+  if (!token) return showLogin();
+  let list, clients;
+  try { [list, clients] = await Promise.all([api("/v1/admin/templates/review"), api("/v1/admin/clients")]); } catch (e) { return; }
+  S.all = list; S.clients = clients;
+  const keep = sel => { const v = $(sel).value; return v; };
+  const ch = keep("channel"), or = keep("origin");
+  const chans = [...new Set(list.map(t => t.channel))].sort();
+  $("channel").innerHTML = '<option value="">all channels</option>' + chans.map(c => `<option>${esc(c)}</option>`).join("");
+  $("channel").value = chans.includes(ch) ? ch : (chans.length === 1 ? chans[0] : "");
+  const origins = [...new Set(list.map(t => t.origin || "?"))].sort();
+  $("origin").innerHTML = '<option value="">any</option>' + origins.map(o => `<option>${esc(o)}</option>`).join("");
+  $("origin").value = origins.includes(or) ? or : "";
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("t") && !S.sel) { S.sel = h.get("t"); $("state").value = ""; }
+  render();
+  if (S.sel) openDetail(S.sel, false);
+}
+function filtered() {
+  const ch = $("channel").value, or = $("origin").value, st = $("state").value, q = $("q").value.trim().toLowerCase();
+  const out = S.all.filter(t => (!ch || t.channel === ch) && (!S.kind || t.kind === S.kind) && (!or || (t.origin || "?") === or)
+    && (!st || (st === "enabled" ? t.enabled !== false : st === "disabled" ? t.enabled === false : st === "reviewed" ? !!t.review
+      : st === "striked" ? (t.strikes || 0) > 0 : st === "unused" ? !t.activity.hits : true))
+    && (!q || (t.name + " " + (t.note || "")).toLowerCase().includes(q)));
+  const key = { source: t => -(t.source || 0), hits: t => -t.activity.hits, strikes: t => -(t.strikes || 0),
+    recurrences: t => -(t.recurrences || 0), lasthit: t => -(t.activity.last || 0), name: t => t.name }[$("sort").value];
+  return out.sort((a, b) => { const x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : 0; });
+}
+function card(t) {
+  const a = t.activity, off = t.enabled === false;
+  return `<div class="card k-${esc(t.kind)}${off ? " off" : ""}${S.sel === t.name ? " sel" : ""}" data-name="${esc(t.name)}" tabindex="0" role="button" aria-label="${esc(t.name)}">
+    <canvas class="prev" width="320" height="180"></canvas>
+    <div class="meta">
+      <div class="badges"><span class="b ${esc(t.kind)}">${esc(t.kind)}</span><span class="b">${esc(t.origin || "?")}</span>
+        ${off ? '<span class="b disabled">disabled</span>' : ""}${t.review ? `<span class="b reviewed" title="by ${esc(t.review.by)}">reviewed</span>` : ""}
+        ${t.provisional ? '<span class="b prov">provisional</span>' : ""}</div>
+      <div class="name" title="${esc(t.name)}">${esc(t.name)}</div>
+      <div class="stats"><span>${esc(t.channel)}</span><span>${t.seconds ?? "?"} s</span><span>thr <b>${t.threshold ?? 0.8}</b></span></div>
+      <div class="stats"><span title="detector hits in the logs">hits <b>${a.hits}</b></span>
+        <span title="successes (the user let it stand)" class="${t.successes ? "good" : ""}">✓ <b>${t.successes || 0}</b></span>
+        <span title="strikes (the user reversed it)" class="${t.strikes ? "bad" : ""}">✗ <b>${t.strikes || 0}</b></span>
+        ${t.recurrences != null ? `<span title="airings found inside other breaks">rec <b>${t.recurrences}</b></span>` : ""}
+        <span title="last detector hit">${ago(a.last)}</span></div>
+    </div>
+    <canvas class="film"></canvas>
+    ${t.note ? `<div class="note" title="${esc(t.note)}">${esc(t.note)}</div>` : ""}
+  </div>`;
+}
+function render() {
+  const list = filtered();
+  $("count").textContent = `${list.length} of ${S.all.length}`;
+  const en = S.all.filter(t => t.enabled !== false);
+  const by = k => en.filter(t => t.kind === k).length;
+  $("summary").innerHTML = `<span>enabled <b>${en.length}</b> (start <b>${by("start")}</b> · end <b>${by("end")}</b>)</span>
+    <span>disabled <b>${S.all.length - en.length}</b></span><span>reviewed <b>${S.all.filter(t => t.review).length}</b></span>
+    <span>never hit (enabled) <b>${en.filter(t => !t.activity.hits).length}</b></span>`;
+  $("grid").innerHTML = list.map(card).join("") || '<div class="empty">No templates match the filters.</div>';
+  $("grid").querySelectorAll(".card").forEach(c => seen.observe(c));
+}
+["channel", "origin", "state", "sort"].forEach(id => $(id).onchange = render);
+$("q").oninput = render;
+$("kind").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.kind = b.dataset.v;
+  $("kind").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); render(); };
+$("grid").addEventListener("click", e => { const c = e.target.closest(".card"); if (c) openDetail(c.dataset.name, true); });
+$("grid").addEventListener("keydown", e => { if (e.key === "Enter") { const c = e.target.closest(".card"); if (c) openDetail(c.dataset.name, true); } });
+let hoverAnim = null;
+$("grid").addEventListener("pointerover", e => {
+  const c = e.target.closest(".card"); if (!c || (hoverAnim && hoverAnim.card === c)) return;
+  stopHover();
+  const z = S.zones.get(c.dataset.name); if (!z) return;
+  const cv = c.querySelector(".prev"), n = z.length / ZB; let f = 0;
+  hoverAnim = { card: c, timer: setInterval(() => { f = (f + 1) % n; paint(cv, z, f); }, 1000 / RATE) };
+});
+$("grid").addEventListener("pointerleave", stopHover);
+$("grid").addEventListener("pointerout", e => { if (hoverAnim && !hoverAnim.card.contains(e.relatedTarget)) stopHover(); });
+function stopHover() { if (!hoverAnim) return; clearInterval(hoverAnim.timer);
+  const z = S.zones.get(hoverAnim.card.dataset.name); if (z) paint(hoverAnim.card.querySelector(".prev"), z, 0); hoverAnim = null; }
+
+// ------------------------------------------------------------------ detail
+let anim = null;
+function viewerLink(client, t, span = 180) {
+  const q = new URLSearchParams({ client, t0: (t - span / 2).toFixed(1), t1: (t + span / 2).toFixed(1), c: t.toFixed(1) });
+  return "/ui/#" + q;
+}
+async function openDetail(name, push) {
+  const t = S.all.find(x => x.name === name); if (!t) return;
+  S.sel = name;
+  if (push) history.replaceState(null, "", "#t=" + encodeURIComponent(name));
+  document.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", c.dataset.name === name));
+  $("layout").classList.add("detail");
+  const a = t.activity, src = t.source_client;
+  $("detail").innerHTML = `
+    <button class="x" id="close" title="Close (Esc)">✕</button>
+    <h2>${esc(t.name)}</h2>
+    <div class="badges"><span class="b ${esc(t.kind)}">${esc(t.kind)}</span><span class="b">${esc(t.origin || "?")}</span>
+      ${t.enabled === false ? '<span class="b disabled">disabled</span>' : '<span class="b">enabled</span>'}
+      ${t.review ? `<span class="b reviewed">reviewed by ${esc(t.review.by)}</span>` : ""}${t.provisional ? '<span class="b prov">provisional</span>' : ""}</div>
+    <canvas class="big" id="big" width="640" height="360"></canvas>
+    <div class="row"><button id="play">⏸ Pause</button><input type="range" class="scrub" id="scrub" min="0" value="0" style="flex:1" aria-label="Frame">
+      <span id="fno" style="font-family:var(--mono);color:var(--dim)"></span><label><input type="checkbox" id="grid9"> zone grid</label></div>
+    <dl>
+      <dt>Channel</dt><dd>${esc(t.channel)}</dd>
+      <dt>Length</dt><dd>${t.frames} frames · ${t.seconds} s</dd>
+      <dt>Threshold</dt><dd>${t.threshold ?? 0.8}</dd>
+      <dt>Cut from</dt><dd>${when(t.source)} ${src ? `· ${esc(src)} · <a href="${viewerLink(src, t.source)}">open in recording ▶</a>` : "· recording unknown"}</dd>
+      ${t.label_t ? `<dt>Break mark</dt><dd>${when(t.label_t)}${src ? ` · <a href="${viewerLink(src, t.label_t)}">open ▶</a>` : ""}</dd>` : ""}
+      <dt>Outcome</dt><dd><span class="good">✓ ${t.successes || 0} stood</span> · <span class="bad">✗ ${t.strikes || 0} reversed</span>${t.recurrences != null ? ` · ${t.recurrences} recurrences` : ""}</dd>
+      <dt>Detector log</dt><dd>${a.hits} hits · ${a.mutes} mutes · ${a.unmutes} unmutes${a.best ? ` · best ${a.best.toFixed(3)}` : ""} · last ${ago(a.last)}</dd>
+      <dt>Note</dt><dd>${esc(t.note || "–")}</dd>
+    </dl>
+    <h3>Review</h3>
+    ${t.review ? `<p style="margin:0 0 6px;color:var(--dim)">${t.review.enabled ? "Enabled" : "Disabled"} by <b>${esc(t.review.by)}</b> ${ago(t.review.t)}${t.review.note ? ": " + esc(t.review.note) : ""}</p>` : ""}
+    <textarea id="rnote" placeholder="why (optional; kept with the decision)">${esc(t.review ? t.review.note : "")}</textarea>
+    <div class="row">
+      <button id="r-off" ${t.enabled === false && t.review ? "disabled" : ""}>Disable</button>
+      <button id="r-on" ${t.enabled !== false && t.review ? "disabled" : ""}>Enable</button>
+      <button id="r-clear" ${t.review ? "" : "disabled"} title="Remove the admin decision; the template keeps its current state and the learner manages it again">Clear review</button>
+      <span id="msg"></span>
+    </div>
+    <p style="color:var(--faint);font-size:12px;margin:4px 0 0">An admin decision overrides the learner's and reaches the TVs with their next library update.</p>
+    <h3>Detector log <span id="hcount"></span></h3>
+    <div id="hits"><div style="color:var(--faint)">loading…</div></div>`;
+  $("close").onclick = closeDetail;
+  $("r-off").onclick = () => review(t.name, false);
+  $("r-on").onclick = () => review(t.name, true);
+  $("r-clear").onclick = () => review(t.name, null);
+  const z = await zonesOf(name);
+  if (S.sel !== name) return;
+  stopAnim();
+  if (z) {
+    const big = $("big"), n = z.length / ZB, sc = $("scrub");
+    sc.max = n - 1;
+    let f = 0, playing = true;
+    const show = () => { paint(big, z, f); sc.value = f; $("fno").textContent = `${f + 1}/${n}`; };
+    anim = setInterval(() => { if (playing) { f = (f + 1) % n; show(); } }, 1000 / RATE);
+    show();
+    $("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "⏸ Pause" : "▶ Play"; };
+    sc.oninput = () => { playing = false; $("play").textContent = "▶ Play"; f = +sc.value; show(); };
+    $("grid9").onchange = e => { big.blocks = e.target.checked; show(); };
+  }
+  try {
+    const hits = await api("/v1/admin/templates/" + encodeURIComponent(name) + "/hits");
+    if (S.sel !== name) return;
+    $("hcount").textContent = hits.length ? `(${hits.length})` : "";
+    $("hits").innerHTML = hits.slice(0, 300).map(h => `<a class="hit" href="${viewerLink(h.client, h.t, 120)}" style="color:inherit;text-decoration:none">
+      <span class="t">${when(h.t)}</span><span>${h.action === "hit" ? `hit <b>${(+h.score).toFixed(3)}</b>` : `<b>${esc(h.action)}</b> · ${esc(h.reason || "")}`}
+      <span style="color:var(--faint)">${esc(h.client)}${h.mode && h.mode !== "active" ? " · " + esc(h.mode) : ""}</span></span></a>`).join("")
+      || '<div style="color:var(--faint)">The detector never logged this template.</div>';
+  } catch (e) { $("hits").textContent = "could not load"; }
+}
+function stopAnim() { if (anim) clearInterval(anim); anim = null; }
+function closeDetail() {
+  stopAnim(); S.sel = null; $("layout").classList.remove("detail"); $("detail").innerHTML = "";
+  document.querySelectorAll(".card.sel").forEach(c => c.classList.remove("sel"));
+  history.replaceState(null, "", location.pathname);
+}
+async function review(name, enabled) {
+  $("msg").textContent = "saving…";
+  try {
+    await api("/v1/admin/templates/" + encodeURIComponent(name) + "/review",
+      { method: "POST", body: JSON.stringify({ enabled, note: $("rnote").value }) });
+  } catch (e) { $("msg").textContent = "not saved: " + e.message; return; }
+  const list = await api("/v1/admin/templates/review");
+  S.all = list; render(); openDetail(name, false);
+}
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, select, textarea")) return;
+  if (e.key === "Escape" && S.sel) closeDetail();
+  else if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey) load();
+});
+$("reload").onclick = load;
+load();
+</script>
+</body>
+</html>

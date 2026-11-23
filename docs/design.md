@@ -151,6 +151,21 @@ read every TV's data; TV tokens cannot. Open `http://SERVER:8766/` and paste the
 - Keys: Space play/pause, ←/→ frame, Shift+←/→ 10 s, J/L previous/next event, `,`/`.` previous/next
   issue, +/− zoom, F fit programme.
 
+**Template review** (`/ui/templates`, the *Templates* button in the viewer's banner;
+`python/adshut/web/templates.html`): every template in the library as a card with its frames
+(animated on hover), kind, origin, threshold, successes and strikes, recurrences and what the
+detector logs say it did (hits, mutes, unmutes, last hit). Filters: channel, kind, origin, state
+(enabled, disabled, reviewed, with strikes, never hit), search; sorts by cut time, hits, strikes,
+recurrences or last hit. The detail panel plays the template, links to the moment it was cut from
+(and its break mark) in the recording viewer, lists every detector log line naming it, and takes
+an admin's decision: **Disable**, **Enable** or **Clear review**. Decisions are kept in
+`DATA/templates/review.json` (with who, when and an optional note) and are applied whenever the
+index is loaded or saved, so they override the learner, survive a learner run that was already
+in progress, and reach the TVs with their next library check. Clearing a decision leaves the
+template as it is and hands it back to the learner. New templates record the client they were
+learned from (`client`); for older ones the page finds the client that recorded that moment.
+Double-clicking a template on the viewer's Templates track opens it here.
+
 The fingerprints are what the TV uploads anyway (16×9 colour averages), so the viewer shows no
 more than the server already holds.
 

@@ -30,6 +30,13 @@ Admins see all TVs' data; TV tokens never get access to it.
   GET /v1/admin/c/ID/strip?from=T&to=T&n=N       overview strip (see viewer.Viewer.strip)
   GET /v1/admin/c/ID/frames?from=T&to=T          raw fingerprint records
   GET /v1/admin/c/ID/scores?from=T&to=T&n=N      best template scores over time
+  GET /v1/admin/templates/review                 index with source client and detector activity
+  GET /v1/admin/templates/NAME.zones             a template's fingerprints (also disabled ones)
+  GET /v1/admin/templates/NAME/hits              detector log lines naming it, all clients
+  POST /v1/admin/templates/NAME/review           {"enabled": true|false|null, "note": "..."}:
+                                                 an admin decision that overrides the learner
+                                                 (library.REVIEW); null clears it
+Template review page: GET /ui/templates (web/templates.html).
 """
 import argparse
 import hashlib
@@ -43,13 +50,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from adshut import fp
+from adshut import library
 from adshut import viewer
 
 RECORD = 8 + 432
 MAX_BODY = 32 * 1024 * 1024
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-UI_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "viewer.html")
+WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+UI_PAGES = {"/ui/": "viewer.html", "/ui/templates": "templates.html"}
+CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data: blob:")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 
@@ -100,6 +111,7 @@ class Store:
                 entries = json.load(f)
         except (OSError, ValueError):
             entries = []
+        library.apply_review(entries, self.tpl)
         out = [{"name": e["name"], "kind": e["kind"], "threshold": e.get("threshold", 0.8),
                 "frames": e["frames"], "channel": e["channel"]}
                for e in entries if e.get("enabled", True) and e["kind"] in ("start", "end")
@@ -170,14 +182,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path)
-        if u.path in ("/", "/ui", "/ui/"):
-            if u.path != "/ui/":
-                return self.reply(302, b"", "text/plain", {"Location": "/ui/"})
-            with open(UI_PAGE, "rb") as f:
+        if u.path in ("/", "/ui"):
+            return self.reply(302, b"", "text/plain", {"Location": "/ui/"})
+        if u.path in UI_PAGES:
+            with open(os.path.join(WEB, UI_PAGES[u.path]), "rb") as f:
                 return self.reply(200, f.read(), "text/html; charset=utf-8",
                                   {"Cache-Control": "no-cache", "X-Frame-Options": "DENY",
-                                   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-                                   "script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"})
+                                   "Content-Security-Policy": CSP})
         if u.path.startswith("/v1/admin/"):
             return self.admin_get(u)
         tv = self.auth()
@@ -205,10 +216,40 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.store.status(tv))
         self.reply(404, {"error": "not found"})
 
-    def admin_get(self, u):
+    def admin_who(self):
         h = self.headers.get("Authorization", "")
-        if not (h.startswith("Bearer ") and self.store.admin(h[7:])):
-            return self.reply(401, {"error": "admin token needed"})
+        who = self.store.admin(h[7:]) if h.startswith("Bearer ") else None
+        if who is None:
+            self.reply(401, {"error": "admin token needed"})
+        return who
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        parts = [unquote(p) for p in u.path.strip("/").split("/")]
+        if parts[:2] != ["v1", "admin"]:
+            return self.reply(404, {"error": "not found"})
+        who = self.admin_who()
+        if who is None:
+            return
+        n = int(self.headers.get("Content-Length", "0") or 0)
+        if n > 65536:
+            return self.reply(413, {"error": "too large"})
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return self.reply(400, {"error": "bad json"})
+        if len(parts) == 5 and parts[2] == "templates" and parts[4] == "review" and isinstance(body, dict):
+            enabled = body.get("enabled")
+            if enabled not in (True, False, None):
+                return self.reply(400, {"error": "enabled: true, false or null"})
+            if not self.viewer.set_review(parts[3], enabled, body.get("note"), who):
+                return self.reply(404, {"error": "no such template"})
+            return self.reply(200, {"ok": True})
+        self.reply(404, {"error": "not found"})
+
+    def admin_get(self, u):
+        if self.admin_who() is None:
+            return
         parts = [unquote(p) for p in u.path.strip("/").split("/")][2:]
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         v = self.viewer
@@ -218,6 +259,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, v.clients(), headers=nostore)
             if parts == ["templates"]:
                 return self.reply(200, v.templates(), headers=nostore)
+            if parts == ["templates", "review"]:
+                return self.reply(200, v.review_list(), headers=nostore)
+            if len(parts) == 2 and parts[0] == "templates" and parts[1].endswith(".zones"):
+                z = v.template_zones(parts[1][:-6])
+                if z is None:
+                    return self.reply(404, {"error": "no such template"})
+                return self.reply(200, z, "application/octet-stream", {"Cache-Control": "max-age=3600"})
+            if len(parts) == 3 and parts[0] == "templates" and parts[2] == "hits":
+                return self.reply(200, v.template_hits(parts[1]), headers=nostore)
             if len(parts) == 3 and parts[0] == "c":
                 cid, what = parts[1], parts[2]
                 if v.sources(cid) is None:

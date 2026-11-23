@@ -100,6 +100,29 @@ class ViewerTest(unittest.TestCase):
         self.assertEqual(len(frames), 50 * 440)
 
 
+class ReviewTest(unittest.TestCase):
+    def test_admin_decision_wins_and_clears(self):
+        from adshut import library
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "tvs", "tv1", "fp"))
+            lib = library.Library(tmp)
+            lib.client = "tv1"
+            z = np.random.default_rng(1).integers(0, 255, (10, 9, 16, 3), dtype=np.uint8)
+            name = lib.add("A", "start", z, T0)
+            self.assertEqual(lib.entries[0]["client"], "tv1")
+            v = viewer.Viewer(tmp)
+            self.assertTrue(v.set_review(name, False, "looks like programme", "me"))
+            self.assertFalse(v.set_review("nope", False, "", "me"))
+            self.assertEqual(server.Store(tmp).index()[1], [])          # TVs no longer get it
+            stale = library.Library(tmp)                               # a learner that loads ...
+            stale.entries[0]["enabled"] = True                         # ... and would re-enable
+            stale.save()
+            self.assertFalse(library.Library(tmp).entries[0]["enabled"])
+            self.assertEqual(v.review_list()[0]["review"]["by"], "me")
+            v.set_review(name, None, "", "me")
+            self.assertNotIn("review", v.review_list()[0])
+
+
 class AdminApiTest(unittest.TestCase):
     def test_admin_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -128,6 +151,13 @@ class AdminApiTest(unittest.TestCase):
                 self.assertEqual(get("/v1/admin/c/x/overview", admin_token)[0], 404)
                 self.assertEqual(get("/v1/admin/c/tv1/strip?from=a", admin_token)[0], 400)
                 self.assertEqual(get("/v1/sync/tv1", admin_token)[0], 401)      # admins are not TVs
+                self.assertEqual(get("/ui/templates")[0], 200)
+                self.assertEqual(get("/v1/admin/templates/review", tv_token)[0], 401)
+                req = urllib.request.Request(base + "/v1/admin/templates/x/review", data=b'{"enabled": false}',
+                                             method="POST", headers={"Authorization": "Bearer " + tv_token})
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    urllib.request.urlopen(req)
+                self.assertEqual(cm.exception.code, 401)
             finally:
                 srv.shutdown()
                 srv.server_close()

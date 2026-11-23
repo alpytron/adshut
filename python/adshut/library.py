@@ -12,6 +12,11 @@ Most templates are learned from the user's presses (learn.py, origin "learned");
 optional "threshold", and "successes"/"strikes" counted from how the user reacted to them.
 Stored under data/templates/: index.json (metadata) and <name>.npz (features, weights, zones).
 Channels are keyed by name, not by the TV's channel id, which can change when the TV rescans.
+Entries learned from a TV's data carry "client" (the TV id, "_host" for the server's own host).
+
+review.json holds an admin's decisions from the template review page ({name: {"enabled", "by",
+"t", "note"}}). They win over the learner's: they are applied whenever the index is loaded or
+saved, so a learner run that started before the decision cannot undo it.
 """
 import json
 import os
@@ -23,6 +28,30 @@ import numpy as np
 from adshut import fp
 
 KINDS = ("start", "end", "boundary")
+REVIEW = "review.json"
+
+
+def load_review(tpl_dir):
+    try:
+        with open(os.path.join(tpl_dir, REVIEW)) as f:
+            r = json.load(f)
+        return r if isinstance(r, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def apply_review(entries, tpl_dir):
+    """Applies the admin's enable/disable decisions to index entries (in place); returns them."""
+    review = load_review(tpl_dir)
+    for e in entries:
+        r = review.get(e["name"])
+        if r:
+            e["review"] = r
+            if r.get("enabled") is not None:
+                e["enabled"] = bool(r["enabled"])
+        else:
+            e.pop("review", None)
+    return entries
 
 
 class Library:
@@ -38,6 +67,7 @@ class Library:
                 self.entries = json.load(f)
         except (OSError, ValueError):
             self.entries = []
+        apply_review(self.entries, self.dir)
         self.loaded = {}
         self.mtime = os.path.getmtime(self.index_file) if os.path.exists(self.index_file) else 0
 
@@ -49,6 +79,7 @@ class Library:
         a forced save writes, so hosts and TVs never load a half-checked library."""
         if getattr(self, "deferred", False) and not force:
             return
+        apply_review(self.entries, self.dir)
         tmp = self.index_file + ".tmp"
         with open(tmp, "w") as f:
             json.dump(self.entries, f, ensure_ascii=False, indent=1)
@@ -85,6 +116,8 @@ class Library:
         })
         if threshold:
             self.entries[-1]["threshold"] = threshold
+        if getattr(self, "client", None):
+            self.entries[-1]["client"] = self.client
         self.entries[-1].update(extra or {})
         self.save()
         return name
