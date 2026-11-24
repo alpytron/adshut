@@ -30,7 +30,7 @@ from adshut import match
 
 THRESHOLD = 0.8            # genuine repeats score 0.9-1.0 through the camera, non-matches < 0.65
 COOLDOWN_S = 15            # one occurrence of a template fires once
-MAX_BREAK_S = 8 * 60       # longest break we believe in
+MAX_BREAK_S = 15 * 60      # longest break we believe in (Hungarian commercial TV runs 10+ min breaks)
 SETTLE_S = 10              # unmute markers are ignored this soon after a break started
 GAP_S = 10                 # picture missing this long ends a break (fail open)
 BUFFER_S = 12

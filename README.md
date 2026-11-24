@@ -56,7 +56,7 @@ project itself runs no server and collects nothing.
    white balance, so it survives a different camera or room light.
 3. **Detect.** Each new frame is compared with the channel's templates: a few seconds of
    fingerprints of an opening or closing ident. A match of the opening one mutes and a match of
-   the closing one unmutes. Safety rules unmute after 8 minutes, on a channel change, or when
+   the closing one unmutes. Safety rules unmute after 15 minutes, on a channel change, or when
    the picture is lost. Your own presses always win.
 4. **Learn.** When you mute by hand, the learner looks at the seconds before your press, finds
    the same pictures in earlier days of recording, and cuts out exactly the stretch that

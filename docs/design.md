@@ -61,7 +61,7 @@ not in break --mute marker ("start")--> in break --unmute marker ("end")--> not 
   occurrence of a template fires once (15 s cooldown). The Java core caches dot products, so a
   new frame costs one correlation per template frame.
 - **Settling**: an unmute marker is ignored in the first 10 s of a break.
-- **Safety**: a break the detector muted is unmuted after 8 minutes, on a channel change, when
+- **Safety**: a break the detector muted is unmuted after 15 minutes, on a channel change, when
   Live TV is left, or when the picture is lost for 10 s. If the viewer presses mute or unmute,
   the detector follows; the safety rules never undo the viewer's own mute.
 - **Back-off**: the TV app stops processing while Live TV is not in front or a menu or the
@@ -146,7 +146,7 @@ read every TV's data; TV tokens cannot. Open `http://SERVER:8766/` and paste the
   shows who unmuted), detector hits and actions, issues, the best start/end template score
   (views up to 45 minutes; computed on demand), brightness and motion, and where templates were cut.
 - **Issues** are derived from the event log: missed opening (the user muted), false mute (the user
-  unmuted within 60 s of a detector mute), missed closing (the user had to unmute, or the 8-minute
+  unmuted within 60 s of a detector mute), missed closing (the user had to unmute, or the 15-minute
   failsafe did), wrong unmute (the user re-muted within 30 s of a detector unmute).
 - Keys: Space play/pause, ←/→ frame, Shift+←/→ 10 s, J/L previous/next event, `,`/`.` previous/next
   issue, +/− zoom, F fit programme.

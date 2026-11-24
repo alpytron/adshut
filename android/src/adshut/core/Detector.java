@@ -27,7 +27,7 @@ import java.util.Map;
 public final class Detector {
     public static final double RATE = 5.0;
     static final float THRESHOLD = 0.8f;
-    static final double COOLDOWN_S = 15, MAX_BREAK_S = 8 * 60, SETTLE_S = 10, GAP_S = 10, RESET_GAP_S = 2.0;
+    static final double COOLDOWN_S = 15, MAX_BREAK_S = 15 * 60, SETTLE_S = 10, GAP_S = 10, RESET_GAP_S = 2.0;
     static final float KEEP = 0.6f, WEIGHT_MIN = 0.3f;
     static final int BUFFER = (int) (12 * RATE);
 

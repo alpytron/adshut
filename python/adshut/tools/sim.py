@@ -35,7 +35,7 @@ from adshut.library import Library
 ACTIVATE_S = 180          # a learned template exists this long after its press (learner timer + reload)
 COOLDOWN_S = 15
 OUTCOME_S = (5, 20)       # what follows an airing: sound state this long after its end
-MAX_BREAK_S = 8 * 60
+MAX_BREAK_S = 15 * 60
 LEAVE_OUT_S = 600
 REACT_S = 60              # the user's press may lag the picture by this much
 
