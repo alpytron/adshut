@@ -13,7 +13,7 @@ the same way the learner sees it:
              another app in front) do not split it, a channel change or a longer gap does
   muted span sound off from one mute event to the next unmute, with who started and ended it
              (detector, user, failsafe, power) and the detector's reason
-  verdict    places worth a look: a break the user had to mute (missed opening), a detector
+  verdict    places worth a look: the TV app's camera warning (no frames while Live TV is on), a break the user had to mute (missed opening), a detector
              mute the user undid quickly (false mute), a break the user had to unmute or the
              failsafe ended (missed closing), a re-mute soon after a detector unmute (wrong unmute)
 """
@@ -493,6 +493,17 @@ def verdicts(events, spans):
         if s["ended_by"] == "failsafe":
             out.append({"t": s["end"], "kind": "missed_closing",
                         "text": "failsafe: %s" % (s.get("end_reason") or "break too long")})
+    lost = None
+    for e in events:                                   # the TV app's camera watchdog
+        if e["type"] == "camera" and not e.get("ok") and lost is None:
+            lost = e
+        elif lost is not None and ((e["type"] == "camera" and e.get("ok"))      # back, or capturing
+                                   or (e["type"] == "capture" and e.get("on"))):    # again after a restart
+            out.append({"t": lost["t"], "kind": "camera_lost",
+                        "text": "%s; back after %.0f min" % (lost.get("error") or "no frames", (e["t"] - lost["t"]) / 60)})
+            lost = None
+    if lost is not None:
+        out.append({"t": lost["t"], "kind": "camera_lost", "text": "%s; not back yet" % (lost.get("error") or "no frames")})
     return sorted(out, key=lambda v: v["t"])
 
 

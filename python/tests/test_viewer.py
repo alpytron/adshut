@@ -42,6 +42,8 @@ EVENTS = [
     ev(700.2, type="mute", muted=True, channel="A", by_detector=True),
     ev(1180, type="detector", action="unmute", reason="break too long"),
     ev(1180.2, type="mute", muted=False, channel="A", by_detector=True), # failsafe: missed closing
+    ev(1150, type="camera", ok=False, error="no camera attached"),
+    ev(1170, type="capture", on=True),                                   # app restarted with a camera
     ev(1200, type="channel", name="B", number="2"),
     ev(1800, type="power", awake=False),
 ]
@@ -79,14 +81,15 @@ class ViewerTest(unittest.TestCase):
         by = [(s["started_by"], s["ended_by"]) for s in ov["muted"]]
         self.assertEqual(by, [("user", "detector"), ("user", "user"), ("detector", "user"), ("detector", "failsafe")])
         kinds = [x["kind"] for x in ov["verdicts"]]
-        self.assertEqual(kinds, ["missed_opening", "wrong_unmute", "false_mute", "missed_closing"])
+        self.assertEqual(kinds, ["missed_opening", "wrong_unmute", "false_mute", "camera_lost", "missed_closing"])
+        self.assertIn("back after", ov["verdicts"][3]["text"])
 
     def test_programmes(self):
         progs = self.v.overview("tv1")["programmes"]
         self.assertEqual([p["channel"] for p in progs], ["A", "B"])   # the 100 s gap does not split A
         self.assertAlmostEqual(progs[0]["end"] - T0, 1200, delta=1)
         self.assertEqual(progs[0]["breaks"], 4)
-        self.assertEqual(progs[0]["issues"], 4)
+        self.assertEqual(progs[0]["issues"], 5)
 
     def test_strip_and_frames(self):
         buf = self.v.strip("tv1", T0 + 850, T0 + 1050, 20)

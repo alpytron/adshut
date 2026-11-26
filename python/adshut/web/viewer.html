@@ -223,7 +223,7 @@ const COL = { det: C("det"), user: C("user"), state: C("state"), ok: C("ok"), en
   line: C("line"), cursor: C("cursor"), accent: C("accent"), panel: C("panel"), panel2: C("panel2") };
 const CH_COLORS = ["#3b6ea5", "#7a5aa6", "#2f8a7a", "#a0613a", "#8a8a2f", "#a5476d", "#4f7f3a", "#5a6aa5"];
 const ISSUE = { missed_opening: "missed opening", missed_closing: "missed closing", false_mute: "false mute",
-  wrong_unmute: "wrong unmute" };
+  wrong_unmute: "wrong unmute", camera_lost: "camera lost" };
 
 let token = null;
 try { token = localStorage.getItem("adshut.token"); } catch (e) {}
@@ -551,7 +551,7 @@ function appName(app) {
 
 // ------------------------------------------------------------------ events
 const EV_GROUPS = { all: () => true, detector: e => e.type === "detector", sound: e => e.type === "mute",
-  channel: e => e.type === "channel", tv: e => ["power", "app", "capture", "calibration"].includes(e.type) };
+  channel: e => e.type === "channel", tv: e => ["power", "app", "capture", "calibration", "camera"].includes(e.type) };
 $("lfil").innerHTML = Object.keys(EV_GROUPS).map(k => `<button data-g="${k}" class="${k === "all" ? "on" : ""}">${k}</button>`).join("");
 $("lfil").onclick = e => { const b = e.target.closest("button"); if (!b) return; S.evFilter = b.dataset.g;
   $("lfil").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderEvents(); };
@@ -565,6 +565,7 @@ function evText(e) {
     case "detector":
       if (e.action === "hit") return `hit <b style="color:${e.template_kind === "start" ? "var(--det)" : e.template_kind === "end" ? "var(--end)" : "var(--dim)"}">${esc(e.template_kind)}</b> ${(+e.score).toFixed(2)} <small>${esc(e.template)}</small>`;
       return `detector <b>${esc(e.action)}</b> · ${esc(e.reason || "")}${e.mode && e.mode !== "active" ? " (" + esc(e.mode) + ")" : ""} <small>${esc(e.template || "")}</small>`;
+    case "camera": return e.ok ? "<b style='color:var(--end)'>camera back</b>" : `<b style='color:var(--det)'>camera problem</b> <small>${esc(e.error || "")}</small>`;
     case "capture": return e.on ? "camera on" : `camera off <small>${e.frames ?? ""} frames</small>`;
     case "calibration": return `calibration ${esc(e.change)}${e.shift != null ? ` <small>shift ${(+e.shift).toFixed(3)}</small>` : ""}`;
     case "capture_error": return `camera error <small>${esc(e.error)}</small>`;

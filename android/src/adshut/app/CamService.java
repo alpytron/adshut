@@ -65,6 +65,8 @@ public class CamService extends Service {
     static final int JPEG_QUALITY = 70;
     static final long IDLE_CLOSE_MS = 15000;     // close the camera this long after the last request
     static final long RETRY_MS = 3000;           // wait this long before reopening after a failure
+    static final long CAM_GRACE_MS = 30000;      // Live TV on this long without frames = camera problem
+    static final long CAM_WARN_EVERY_MS = 5 * 60000;  // repeat the on-screen warning this often
     static final int MAX_CLIENTS = 6;
 
     private static final int IDLE = 0, OPENING = 1, RUNNING = 2;
@@ -111,6 +113,9 @@ public class CamService extends Service {
     private volatile String lastError = "";
     private volatile String cameraInfo = "";
     private volatile long lastDemand, lastFailure, lastEncode, startedAt;
+    private volatile long lastFrameAt;
+    private volatile String cameraProblem = "";
+    private long wantedSince, lastWarn;
 
     private final Object frameLock = new Object();
     private byte[] latestJpeg;
@@ -239,7 +244,9 @@ public class CamService extends Service {
                 long now = SystemClock.elapsedRealtime();
                 boolean clientsWant = streamClients.get() > 0 || now - lastDemand <= IDLE_CLOSE_MS
                         || setupSink != null;
-                if (live.wanted() || setupSink != null) {
+                boolean liveWants = live.wanted();
+                checkCamera(liveWants, now);
+                if (liveWants || setupSink != null) {
                     if (state == IDLE && now - lastFailure > RETRY_MS) {
                         startCamera();
                     }
@@ -253,6 +260,51 @@ public class CamService extends Service {
             camHandler.postDelayed(this, 1000);
         }
     };
+
+    /**
+     * Warns on screen while Live TV is on but no frames arrive (camera unplugged, or the TV's USB
+     * port switched to device mode because USB debugging was on at boot): without frames nothing
+     * gets muted, and that is otherwise invisible. Logged as "camera" events (ok false/true).
+     */
+    private void checkCamera(boolean liveWants, long now) {
+        if (!liveWants) {
+            wantedSince = 0;
+        } else if (wantedSince == 0) {
+            wantedSince = now;
+        }
+        String problem = "";
+        if (liveWants && now - wantedSince > CAM_GRACE_MS && now - lastFrameAt > CAM_GRACE_MS) {
+            problem = state == RUNNING ? "no frames from the camera"
+                    : lastError.isEmpty() ? "camera not running" : lastError;
+        }
+        if (!problem.isEmpty()) {
+            if (cameraProblem.isEmpty()) {
+                cameraEvent(false, problem);
+            }
+            if (lastWarn == 0 || now - lastWarn > CAM_WARN_EVERY_MS) {
+                lastWarn = now;
+                toast("AdShut: " + problem + " \u2013 ads are not muted.\n"
+                        + "Check the webcam. If USB debugging is on, switch it off and restart the TV.");
+            }
+            cameraProblem = problem;
+        } else if (!cameraProblem.isEmpty() && now - lastFrameAt < 5000) {
+            cameraProblem = "";
+            lastWarn = 0;
+            cameraEvent(true, null);
+            toast("AdShut: camera is back");
+        }
+    }
+
+    private void cameraEvent(boolean ok, String error) {
+        try {
+            org.json.JSONObject o = new org.json.JSONObject();
+            o.put("ok", ok);
+            if (error != null) o.put("error", error);
+            dlog.event(System.currentTimeMillis() / 1000.0, "camera", o);
+        } catch (Exception e) {
+            Log.w(TAG, "camera event: " + e);
+        }
+    }
 
     private void fail(String what, Throwable e) {
         lastError = what + (e == null ? "" : ": " + e);
@@ -392,6 +444,7 @@ public class CamService extends Service {
             try {
                 img = r.acquireLatestImage();
                 if (img == null) return;
+                lastFrameAt = SystemClock.elapsedRealtime();
                 live.onFrame(img);
                 SetupSink sink = setupSink;
                 if (sink != null) {
@@ -655,7 +708,7 @@ public class CamService extends Service {
         return "{\"camera\":\"" + st + "\",\"info\":\"" + esc(cameraInfo) + "\",\"frames\":" + frames
                 + ",\"clients\":" + clients.get() + ",\"stream_clients\":" + streamClients.get()
                 + ",\"uptime_s\":" + (SystemClock.elapsedRealtime() - startedAt) / 1000
-                + ",\"last_error\":\"" + esc(lastError) + "\"}";
+                + ",\"last_error\":\"" + esc(lastError) + "\",\"camera_problem\":\"" + esc(cameraProblem) + "\"}";
     }
 
     /** Shows a short toast over whatever is on screen (text toasts are allowed from the background). */
